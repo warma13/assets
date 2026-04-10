@@ -220,6 +220,36 @@ local function CalcXDamage(ctx)
         end
     end
 
+    -- 关键被动: 燃爆 — 对燃烧敌人+15%[x]
+    if GameState.GetSkillLevel("kp_combustion") > 0 then
+        local target = ctx.target
+        if target.burnTimer and target.burnTimer > 0 then
+            mul = mul * 1.15
+        end
+    end
+
+    -- 关键被动: 伊苏祝福 — 攻速每超过基础1%, 伤害+0.5%[x]
+    if ctx._esuBlessingBonus and ctx._esuBlessingBonus > 0 then
+        mul = mul * (1 + ctx._esuBlessingBonus)
+    end
+
+    -- 关键被动: 元素归一 — 交替元素+12%[x]
+    if ctx._alignElementsBonus then
+        mul = mul * (1 + ctx._alignElementsBonus)
+    end
+
+    -- 关键被动: 过载 — 有爆裂电花时+25%[x] 并消耗1个
+    if (GameState._cracklingEnergyCount or 0) > 0
+       and GameState.GetSkillLevel("kp_overcharge") > 0 then
+        mul = mul * 1.25
+        GameState._cracklingEnergyCount = GameState._cracklingEnergyCount - 1
+    end
+
+    -- 至尊陨石: 火焰伤害+20%[x] (8秒)
+    if ctx.element == "fire" and (GameState._meteorSupremeTimer or 0) > 0 then
+        mul = mul * 1.20
+    end
+
     return mul
 end
 
@@ -458,6 +488,26 @@ function DamageFormula.BuildContext(opts)
         local kpCfg = SkillTreeCfg.SKILL_MAP["kp_avalanche"]
         if kpCfg then
             ctx._avalancheEffect = kpCfg.effect()
+        end
+    end
+
+    -- 关键被动: 伊苏祝福 — 攻速每超过基础1%, 伤害+0.5%[x]
+    ctx._esuBlessingBonus = 0
+    if GameState.GetSkillLevel("kp_esu_blessing") > 0 then
+        local effectiveSpd = GameState.GetAtkSpeed()
+        local baseSpd = GameState.player.atkSpeed or 1.0
+        if effectiveSpd > baseSpd then
+            local excessPct = (effectiveSpd / baseSpd - 1) * 100
+            ctx._esuBlessingBonus = excessPct * 0.005
+        end
+    end
+
+    -- 关键被动: 元素归一 — 交替不同元素+12%[x]
+    if GameState.GetSkillLevel("kp_align_elements") > 0
+       and ctx.damageTag == "skill" and ctx.element then
+        local lastElem = GameState._lastSkillElement
+        if lastElem and lastElem ~= ctx.element then
+            ctx._alignElementsBonus = 0.12
         end
     end
 

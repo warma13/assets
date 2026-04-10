@@ -276,6 +276,10 @@ function StageManager.RetryStage(bs)
     Spawner.Reset()
     Spawner.BuildQueue()
 
+    -- 引导系统: 波次切换时强制重置
+    local ok_ch, ChannelSystem = pcall(require, "battle.ChannelSystem")
+    if ok_ch then ChannelSystem.Reset() end
+
     if bs.playerBattle then
         bs.playerBattle.x = bs.areaW / 2
         bs.playerBattle.y = bs.areaH / 2

@@ -74,25 +74,32 @@ SkillTreeConfig.SKILLS = {
     {
         id = "fire_bolt", name = "火焰弹", tier = 1,
         nodeType = "active", element = "fire", isBasic = true,
-        desc = "发射火焰弹，造成%d%%武器伤害",
+        desc = "投掷火焰弹，造成%d%%武器伤害，并使目标燃烧6秒",
         maxLevel = 5,
-        effect = function(lv) return 30 + lv * 6 end, -- 36%~60%
+        effect = function(lv) return 15 + lv * 4 end, -- 直击 19%~35%
+        burnDmgPct = function(lv) return (35 + lv * 7) / 100 end, -- 燃烧总量 42%~70% (6秒)
+        burnDuration = 6.0,
         cooldown = 0, -- 无CD, 受攻速影响
         enhances = {
-            -- 增强线1: 强化 vs 闪耀 (2选1)
+            -- line 1: 强化火焰弹 (Y形根节点)
             {
                 { id = "fire_bolt_enhanced", name = "强化火焰弹",
-                  desc = "对燃烧敌人伤害+30%%",
-                  effect = function() return 0.30 end },
-                { id = "fire_bolt_glinting", name = "闪耀火焰弹",
-                  desc = "命中敌人额外生成2点法力",
+                  desc = "火焰弹穿透燃烧中的敌人",
+                  effect = function() return 1 end },
+            },
+            -- line 2: 闪烁火焰弹 (Y形分支A, 依赖强化)
+            {
+                requires = "fire_bolt_enhanced",
+                { id = "fire_bolt_flickering", name = "闪烁火焰弹",
+                  desc = "命中敌人时生成2点法力",
                   effect = function() return 2 end },
             },
-            -- 增强线2: 强效 (1选1)
+            -- line 3: 闪耀火焰弹 (Y形分支B, 依赖强化)
             {
-                { id = "fire_bolt_potent", name = "强效火焰弹",
-                  desc = "点燃敌人，持续6秒造成火焰伤害",
-                  effect = function() return 6.0 end },
+                requires = "fire_bolt_enhanced",
+                { id = "fire_bolt_glinting", name = "闪耀火焰弹",
+                  desc = "对燃烧中的敌人伤害+30%%",
+                  effect = function() return 0.30 end },
             },
         },
     },
@@ -134,49 +141,65 @@ SkillTreeConfig.SKILLS = {
     {
         id = "spark", name = "电花", tier = 1,
         nodeType = "active", element = "lightning", isBasic = true,
-        desc = "释放闪电电花，%d%%武器伤害×4段",
+        desc = "释放电弧，对目标连续打击4次，每次造成%d%%武器伤害",
         maxLevel = 5,
-        effect = function(lv) return 8 + lv * 2 end, -- 10%~18% ×4
+        effect = function(lv) return 25 + lv * 3 end, -- 28%~40% ×4
         cooldown = 0,
         hitCount = 4,
         enhances = {
+            -- line 1: 强化电花 (Y形根节点)
             {
                 { id = "spark_enhanced", name = "强化电花",
                   desc = "每次施放暴击率+2%%，最多叠加至8%%",
                   effect = function() return 0.02 end },
-                { id = "spark_glinting", name = "闪耀电花",
-                  desc = "消灭敌人时10%%几率生成爆裂电花",
-                  effect = function() return 0.10 end },
             },
+            -- line 2: 闪烁电花 (Y形分支A, 依赖强化)
             {
-                { id = "spark_potent", name = "强效电花",
+                requires = "spark_enhanced",
+                { id = "spark_flickering", name = "闪烁电花",
+                  desc = "每段命中生成1点法力（单次施放最多4点）",
+                  effect = function() return 1 end },
+            },
+            -- line 3: 闪耀电花 (Y形分支B, 依赖强化)
+            {
+                requires = "spark_enhanced",
+                { id = "spark_glinting", name = "闪耀电花",
                   desc = "电花额外弹跳2次",
                   effect = function() return 2 end },
             },
         },
     },
 
-    -- 奥术打击 (第4个基础技能, 非元素/物理系)
+    -- 电弧打击 (第4个基础技能, 闪电系)
     {
-        id = "arcane_strike", name = "奥术打击", tier = 1,
-        nodeType = "active", element = "fire", isBasic = true,
-        desc = "近距奥术打击，%d%%武器伤害，击退敌人",
+        id = "arcane_strike", name = "电弧打击", tier = 1,
+        nodeType = "active", element = "lightning", isBasic = true,
+        desc = "释放电弧冲击波，造成%d%%武器伤害，每10次释放击晕敌人2秒",
         maxLevel = 5,
-        effect = function(lv) return 35 + lv * 7 end, -- 42%~70%
+        effect = function(lv) return 80 + lv * 8 end, -- 88%~120%
         cooldown = 0,
+        stunInterval = 10,    -- 每10次释放触发眩晕
+        stunDuration = 2.0,   -- 眩晕2秒
         enhances = {
+            -- line 1: 强化电弧打击 (Y形根节点)
             {
-                { id = "arcane_strike_enhanced", name = "强化奥术打击",
-                  desc = "击退距离+50%%",
-                  effect = function() return 0.50 end },
-                { id = "arcane_strike_glinting", name = "闪耀奥术打击",
+                { id = "arcane_strike_enhanced", name = "强化电弧打击",
+                  desc = "眩晕间隔缩短至每7次，眩晕延长至3秒",
+                  effect = function() return 7 end },
+            },
+            -- line 2: 闪烁电弧打击 (Y形分支A, 依赖强化)
+            {
+                requires = "arcane_strike_enhanced",
+                { id = "arcane_strike_flickering", name = "闪烁电弧打击",
+                  desc = "命中时生成3点法力",
+                  effect = function() return 3 end },
+            },
+            -- line 3: 闪耀电弧打击 (Y形分支B, 依赖强化)
+            {
+                requires = "arcane_strike_enhanced",
+                { id = "arcane_strike_glinting", name = "闪耀电弧打击",
                   desc = "命中时获得10%%攻速加成3秒",
                   effect = function() return 0.10 end },
-            },
-            {
-                { id = "arcane_strike_potent", name = "强效奥术打击",
-                  desc = "暴击时造成双倍击退",
-                  effect = function() return 2.0 end },
             },
         },
     },
@@ -185,53 +208,78 @@ SkillTreeConfig.SKILLS = {
     -- T2: 核心技能 (5个, 门槛2) — 主力输出
     -- ====================================================================
 
-    -- 火球
+    -- 火球 — 经典AOE爆破, 燃烧联动
     {
         id = "fireball", name = "火球", tier = 2,
         nodeType = "active", element = "fire",
-        desc = "投掷火球爆炸，%d%%武器伤害",
+        desc = "投掷火球在敌群中引爆，造成%d%%武器伤害。命中燃烧中的敌人伤害+25%%",
         maxLevel = 5,
-        effect = function(lv) return 66 + lv * 13 end, -- 79%~118%
-        cooldown = 4.0,
+        effect = function(lv) return 60 + lv * 12 end, -- 72%~120%
+        manaCost = 25,
+        cooldown = 5.0,
+        burnBonusPct = 0.25,        -- 对燃烧敌人额外伤害 +25%
+        burnApplyPct = 0.20,        -- 命中施加燃烧: 20%武器伤害/秒
+        burnApplyDur = 3.0,         -- 燃烧持续3秒 (总60%)
         enhances = {
+            -- line 1: 强化火球 (Y形根节点)
             {
                 { id = "fireball_enhanced", name = "强化火球",
-                  desc = "爆炸半径+50%%",
+                  desc = "火球爆炸后留下燃烧地面，持续3秒，每秒造成15%%武器伤害",
+                  effect = function() return 1 end },
+            },
+            -- line 2: 闪烁火球 (依赖强化, 燃烧增伤流)
+            {
+                requires = "fireball_enhanced",
+                { id = "fireball_flickering", name = "闪烁火球",
+                  desc = "对燃烧敌人额外伤害提升至50%%(替代25%%)；击杀燃烧敌人回复3法力",
                   effect = function() return 0.50 end },
             },
+            -- line 3: 闪耀火球 (依赖强化, 暴击AOE流)
             {
-                { id = "fireball_destructive", name = "毁灭火球",
-                  desc = "暴击伤害+20%%，命中≥3敌人时提升至30%%",
-                  effect = function() return 0.20 end },
-                { id = "fireball_greater", name = "强效火球",
-                  desc = "留下燃烧区域，持续4秒造成火焰伤害",
-                  effect = function() return 4.0 end },
+                requires = "fireball_enhanced",
+                { id = "fireball_glinting", name = "闪耀火球",
+                  desc = "火球暴击时引发二次爆炸，造成原始伤害40%%；爆炸半径+30%%",
+                  effect = function() return 0.40 end },
             },
         },
     },
 
-    -- 焚烧
+    -- 焚烧 — 递增灼烧, 站桩高DPS
     {
         id = "incinerate", name = "焚烧", tier = 2,
         nodeType = "active", element = "fire",
-        desc = "引导火焰，%d%%武器伤害/秒",
+        desc = "引导火焰射线，每0.5秒造成一段%d%%武器伤害，伤害逐段递增",
         maxLevel = 5,
-        effect = function(lv) return 101 + lv * 20 end, -- 121%~201%
-        cooldown = 5.0,
+        effect = function(lv) return 32 + lv * 6 end, -- 每段 38%~62%
+        manaCost = 30,
+        cooldown = 8.0,
         isChanneled = true,
+        channelTicks = 4,                           -- 4段
+        channelInterval = 0.5,                      -- 每0.5秒一段
+        channelRamp = { 1.0, 1.25, 1.5, 2.0 },     -- 逐段递增倍率
+        burnStackPct = 0.10,                        -- 每段施加10%燃烧/秒
+        burnStackDur = 3.0,                         -- 燃烧持续3秒
+        burnMaxStacks = 4,                          -- 最多4层
         enhances = {
+            -- line 1: 强化焚烧 (Y形根节点)
             {
                 { id = "incinerate_enhanced", name = "强化焚烧",
-                  desc = "引导时移动速度+20%%",
+                  desc = "引导期间移速+20%%，被击中不再打断引导",
                   effect = function() return 0.20 end },
             },
+            -- line 2: 闪烁焚烧 (依赖强化, 燃烧增伤流)
             {
-                { id = "incinerate_destructive", name = "毁灭焚烧",
-                  desc = "对燃烧敌人伤害+30%%",
-                  effect = function() return 0.30 end },
-                { id = "incinerate_greater", name = "强效焚烧",
-                  desc = "引导时获得屏障，吸收10%%最大生命值伤害",
-                  effect = function() return 0.10 end },
+                requires = "incinerate_enhanced",
+                { id = "incinerate_flickering", name = "闪烁焚烧",
+                  desc = "第4段对燃烧敌人额外伤害+60%%；每段命中回复2法力",
+                  effect = function() return 0.60 end },
+            },
+            -- line 3: 闪耀焚烧 (依赖强化, 防御反击流)
+            {
+                requires = "incinerate_enhanced",
+                { id = "incinerate_glinting", name = "闪耀焚烧",
+                  desc = "引导期间每段获得5%%最大生命值屏障；引导结束时释放火焰爆炸，造成80%%武器伤害",
+                  effect = function() return 0.80 end },
             },
         },
     },
@@ -271,53 +319,73 @@ SkillTreeConfig.SKILLS = {
         },
     },
 
-    -- 电荷弹
+    -- 电荷弹 — 散射弹幕, 眩晕概率, Boss杀手
     {
         id = "charged_bolts", name = "电荷弹", tier = 2,
         nodeType = "active", element = "lightning",
-        desc = "释放电荷弹，%d%%武器伤害",
+        desc = "释放5枚电荷弹向前方散射，每枚造成%d%%武器伤害，20%%概率眩晕0.5秒",
         maxLevel = 5,
-        effect = function(lv) return 175 + lv * 35 end, -- 210%~350%
+        effect = function(lv) return 35 + lv * 7 end, -- 每弹 42%~70%
+        manaCost = 25,
         cooldown = 5.0,
+        boltCount = 5,              -- 弹体数量
+        stunChance = 0.20,          -- 眩晕概率 20%
+        stunDuration = 0.5,         -- 眩晕时长 0.5s
         enhances = {
+            -- line 1: 强化电荷弹 (Y形根节点)
             {
                 { id = "charged_bolts_enhanced", name = "强化电荷弹",
-                  desc = "爆炸伤害提升至79%%",
-                  effect = function() return 0.79 end },
-            },
-            {
-                { id = "charged_bolts_destructive", name = "毁灭电荷弹",
-                  desc = "暴击时生成爆裂电花",
+                  desc = "弹体数量+2(共7枚)；眩晕概率提升至30%%",
                   effect = function() return 1 end },
-                { id = "charged_bolts_greater", name = "强效电荷弹",
-                  desc = "弹跳次数+2",
-                  effect = function() return 2 end },
+            },
+            -- line 2: 闪烁电荷弹 (依赖强化, 眩晕联动流)
+            {
+                requires = "charged_bolts_enhanced",
+                { id = "charged_bolts_flickering", name = "闪烁电荷弹",
+                  desc = "命中眩晕中的敌人伤害+40%%；每次眩晕敌人回复2法力",
+                  effect = function() return 0.40 end },
+            },
+            -- line 3: 闪耀电荷弹 (依赖强化, 聚焦爆发流)
+            {
+                requires = "charged_bolts_enhanced",
+                { id = "charged_bolts_glinting", name = "闪耀电荷弹",
+                  desc = "3枚以上弹体命中同一目标时，触发电荷过载：额外造成60%%武器伤害并溅射30%%",
+                  effect = function() return 0.60 end },
             },
         },
     },
 
-    -- 连锁闪电
+    -- 连锁闪电 — 弹跳链电, 越弹越强
     {
         id = "chain_lightning", name = "连锁闪电", tier = 2,
         nodeType = "active", element = "lightning",
-        desc = "闪电弹跳，%d%%武器伤害，每次弹跳伤害递增",
+        desc = "释放闪电弹射6次，首次造成%d%%武器伤害，每次弹跳递增10%%",
         maxLevel = 5,
-        effect = function(lv) return 43 + lv * 9 end, -- 52%~88%
-        cooldown = 4.5,
-        bounceCount = 5,
+        effect = function(lv) return 40 + lv * 8 end, -- 首次 48%~80%
+        manaCost = 30,
+        cooldown = 6.0,
+        bounceCount = 6,            -- 弹跳次数
+        bounceRampPct = 0.10,       -- 每次弹跳伤害递增 +10%
         enhances = {
+            -- line 1: 强化连锁闪电 (Y形根节点)
             {
                 { id = "chain_lightning_enhanced", name = "强化连锁闪电",
-                  desc = "每次弹跳+3%%暴击率",
+                  desc = "每次弹跳+3%%暴击率；弹跳次数+2(共8次)",
                   effect = function() return 0.03 end },
             },
+            -- line 2: 闪烁连锁闪电 (依赖强化, 眩晕延续流)
             {
-                { id = "chain_lightning_destructive", name = "毁灭连锁闪电",
-                  desc = "暴击时生成爆裂电花",
-                  effect = function() return 1 end },
-                { id = "chain_lightning_greater", name = "强效连锁闪电",
-                  desc = "每次弹跳伤害+10%%",
-                  effect = function() return 0.10 end },
+                requires = "chain_lightning_enhanced",
+                { id = "chain_lightning_flickering", name = "闪烁连锁闪电",
+                  desc = "弹跳到眩晕敌人时造成双倍伤害并延长眩晕0.5秒；击杀时额外弹跳2次",
+                  effect = function() return 2.0 end },
+            },
+            -- line 3: 闪耀连锁闪电 (依赖强化, 递增爆发流)
+            {
+                requires = "chain_lightning_enhanced",
+                { id = "chain_lightning_glinting", name = "闪耀连锁闪电",
+                  desc = "弹跳伤害递增提升至+20%%；最后一次弹跳触发雷暴，对周围造成50%%武器伤害AOE",
+                  effect = function() return 0.20 end },
             },
         },
     },
@@ -910,6 +978,32 @@ function SkillTreeConfig.CanLearnEnhance(enhanceId, getLevel, totalSpent)
             local reqCfg = SkillTreeConfig.SKILL_MAP[reqId]
             local reqName = reqCfg and reqCfg.name or reqId
             return false, "需要先学习: " .. reqName
+        end
+    end
+
+    -- 隐式Y形前置: 当增强结构为 [1节点line] + [2节点line]（无requires）时,
+    -- 多节点line中的节点需要先学单节点line的那个节点
+    if not line.requires then
+        local enhances = info.skill.enhances
+        local hasChildLines = false
+        for _, ln in ipairs(enhances) do
+            if ln.requires then hasChildLines = true; break end
+        end
+        if not hasChildLines and #enhances >= 2 then
+            -- 检测: 当前节点所在line有多个节点 → 找单节点line作为隐式前置
+            if #line >= 2 then
+                for _, otherLine in ipairs(enhances) do
+                    if otherLine ~= line and #otherLine == 1 then
+                        local rootId = otherLine[1].id
+                        if getLevel(rootId) <= 0 then
+                            local rootCfg = SkillTreeConfig.SKILL_MAP[rootId]
+                            local rootName = rootCfg and rootCfg.name or rootId
+                            return false, "需要先学习: " .. rootName
+                        end
+                        break
+                    end
+                end
+            end
         end
     end
 

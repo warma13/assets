@@ -15,6 +15,7 @@ local BattleView = Widget:Extend("BattleView")
 
 -- 图片句柄（仅本文件使用的，延迟加载）
 local projImgHandle      = nil  -- 弹道图片
+local hydraFbImgHandle   = nil  -- 九头蛇火球弹体图片
 local trailImgHandle     = nil  -- 紫焰拖尾图片
 local bgImgHandle        = nil  -- 战斗背景图
 local bgImgChapter       = 0   -- 当前背景对应的章节号
@@ -27,6 +28,16 @@ local IDLE_BG_PATH       = "idle_bg_20260310191041.png"
 local fireSheetHandle    = nil
 local FIRE_SHEET_COLS    = 4
 local FIRE_ANIM_FPS      = 6
+
+-- 雷暴闪电柱 (3 变体 + 地面冲击)
+local thunderBoltHandles = nil  -- {1..3 -> handle}
+local thunderImpactHandle = nil
+local THUNDER_BOLT_PATHS = {
+    "image/lightning_bolt_1_20260410155330.png",
+    "image/lightning_bolt_2_20260410155116.png",
+    "image/lightning_bolt_3_20260410155117.png",
+}
+local THUNDER_IMPACT_PATH = "image/lightning_ground_impact_20260410155131.png"
 
 -- 暴风雪冰晶碎片调试参数 (F8 调试面板可调)
 local blizzardShardHandle = nil
@@ -430,6 +441,154 @@ function BattleView:DrawFireZones(nvg, l, bs)
             nvgFillPaint(nvg, innerGlow)
             nvgFill(nvg)
 
+        -- ⚡ 雷暴区域: 闪电柱图片随机劈落 + 地面电击标记
+        elseif zone.source == "thunderstorm" then
+            radius = zone.radius  -- 稳定半径
+
+            -- 延迟加载闪电图片
+            if not thunderBoltHandles then
+                thunderBoltHandles = {}
+                for i, path in ipairs(THUNDER_BOLT_PATHS) do
+                    thunderBoltHandles[i] = nvgCreateImage(nvg, path, 0)
+                end
+            end
+            if not thunderImpactHandle then
+                thunderImpactHandle = nvgCreateImage(nvg, THUNDER_IMPACT_PATH, 0)
+            end
+
+            -- 用确定性种子生成多道闪电，每道有独立的生命周期
+            -- 每 0.25s 一道新闪电，同时存在 ~3 道
+            local BOLT_INTERVAL = 0.25
+            local BOLT_LIFE     = 0.4   -- 每道闪电持续时间
+            local BOLT_SLOTS    = 5     -- 最多同时计算的槽位
+
+            for slot = 0, BOLT_SLOTS - 1 do
+                -- 每个槽位的出生时间
+                local bornTime = math.floor(time / BOLT_INTERVAL) * BOLT_INTERVAL - slot * BOLT_INTERVAL
+                local age = time - bornTime
+                if age >= 0 and age < BOLT_LIFE then
+                    -- 用 bornTime 做种子，位置确定且不随帧变化
+                    local seed = bornTime * 127.1 + zone.x * 3.7 + slot * 53
+                    local rx = math.sin(seed) * 0.7              -- -0.7 ~ 0.7
+                    local ry = math.cos(seed * 1.3 + 7) * 0.5    -- -0.5 ~ 0.5
+                    local bx = sx + rx * radius
+                    local by = sy + ry * radius
+
+                    -- 闪电柱图片选择 (3 变体)
+                    local variant = math.floor(math.abs(math.sin(seed * 2.9)) * 3) % 3 + 1
+                    local boltH = thunderBoltHandles[variant]
+
+                    -- 淡入淡出: 0~0.1 淡入, 0.1~0.25 全亮, 0.25~0.4 淡出
+                    local boltAlpha
+                    if age < 0.1 then
+                        boltAlpha = age / 0.1
+                    elseif age < 0.25 then
+                        boltAlpha = 1.0
+                    else
+                        boltAlpha = 1.0 - (age - 0.25) / 0.15
+                    end
+                    boltAlpha = boltAlpha * lifeRatio
+
+                    -- 绘制闪电柱 (从上方劈到 by)
+                    if boltH and boltH > 0 and boltAlpha > 0.02 then
+                        local boltW = 36
+                        local boltHt = 120
+                        local imgPaint = nvgImagePattern(nvg,
+                            bx - boltW / 2, by - boltHt,
+                            boltW, boltHt, 0, boltH, boltAlpha)
+                        nvgBeginPath(nvg)
+                        nvgRect(nvg, bx - boltW / 2, by - boltHt, boltW, boltHt)
+                        nvgFillPaint(nvg, imgPaint)
+                        nvgFill(nvg)
+                    end
+
+                    -- 地面电击标记 (稍晚出现，持续更久)
+                    if thunderImpactHandle and thunderImpactHandle > 0 and age > 0.05 then
+                        local impactAlpha = boltAlpha * 0.9
+                        local impactSize = 28
+                        local ip = nvgImagePattern(nvg,
+                            bx - impactSize / 2, by - impactSize / 2,
+                            impactSize, impactSize, 0, thunderImpactHandle, impactAlpha)
+                        nvgBeginPath(nvg)
+                        nvgRect(nvg, bx - impactSize / 2, by - impactSize / 2, impactSize, impactSize)
+                        nvgFillPaint(nvg, ip)
+                        nvgFill(nvg)
+                    end
+                end
+            end
+
+        -- ⚡ 雷霆风暴区域: 全屏级密集闪电柱图片劈落
+        elseif zone.source == "thunder_storm" then
+            radius = zone.radius
+
+            -- 复用雷暴的闪电图片（延迟加载）
+            if not thunderBoltHandles then
+                thunderBoltHandles = {}
+                for i, path in ipairs(THUNDER_BOLT_PATHS) do
+                    thunderBoltHandles[i] = nvgCreateImage(nvg, path, 0)
+                end
+            end
+            if not thunderImpactHandle then
+                thunderImpactHandle = nvgCreateImage(nvg, THUNDER_IMPACT_PATH, 0)
+            end
+
+            -- 更密集的闪电: 间隔更短、槽位更多
+            local BOLT_INTERVAL = 0.15
+            local BOLT_LIFE     = 0.4
+            local BOLT_SLOTS    = 8
+
+            for slot = 0, BOLT_SLOTS - 1 do
+                local bornTime = math.floor(time / BOLT_INTERVAL) * BOLT_INTERVAL - slot * BOLT_INTERVAL
+                local age = time - bornTime
+                if age >= 0 and age < BOLT_LIFE then
+                    local seed = bornTime * 97.3 + zone.x * 5.1 + slot * 41
+                    local rx = math.sin(seed) * 0.85
+                    local ry = math.cos(seed * 1.7 + 3) * 0.7
+                    local bx = sx + rx * radius
+                    local by = sy + ry * radius
+
+                    local variant = math.floor(math.abs(math.sin(seed * 3.1)) * 3) % 3 + 1
+                    local boltH = thunderBoltHandles[variant]
+
+                    -- 淡入淡出
+                    local boltAlpha
+                    if age < 0.08 then
+                        boltAlpha = age / 0.08
+                    elseif age < 0.2 then
+                        boltAlpha = 1.0
+                    else
+                        boltAlpha = 1.0 - (age - 0.2) / 0.2
+                    end
+                    boltAlpha = boltAlpha * lifeRatio
+
+                    -- 闪电柱（更大）
+                    if boltH and boltH > 0 and boltAlpha > 0.02 then
+                        local boltW = 44
+                        local boltHt = 140
+                        local imgPaint = nvgImagePattern(nvg,
+                            bx - boltW / 2, by - boltHt,
+                            boltW, boltHt, 0, boltH, boltAlpha)
+                        nvgBeginPath(nvg)
+                        nvgRect(nvg, bx - boltW / 2, by - boltHt, boltW, boltHt)
+                        nvgFillPaint(nvg, imgPaint)
+                        nvgFill(nvg)
+                    end
+
+                    -- 地面电击
+                    if thunderImpactHandle and thunderImpactHandle > 0 and age > 0.04 then
+                        local impactAlpha = boltAlpha * 0.9
+                        local impactSize = 32
+                        local ip = nvgImagePattern(nvg,
+                            bx - impactSize / 2, by - impactSize / 2,
+                            impactSize, impactSize, 0, thunderImpactHandle, impactAlpha)
+                        nvgBeginPath(nvg)
+                        nvgRect(nvg, bx - impactSize / 2, by - impactSize / 2, impactSize, impactSize)
+                        nvgFillPaint(nvg, ip)
+                        nvgFill(nvg)
+                    end
+                end
+            end
+
         else
             -- 帧动画: 根据时间选择当前帧 (每个 zone 用自身位置做偏移避免同步)
             local frameIdx = math.floor((time * FIRE_ANIM_FPS + zone.x * 0.05) % FIRE_SHEET_COLS)
@@ -703,21 +862,42 @@ function BattleView:DrawProjectiles(nvg, l, bs)
         end
         ::skip_proj_trail::
 
-        -- 弹体图片
-        if projImgHandle and projImgHandle >= 0 then
-            local half = size * 0.5
+        -- 弹体图片 (区分九头蛇火球 vs 紫焰弹)
+        local isHydraFb = proj.source == "hydra_fireball"
+        if isHydraFb then
+            -- 延迟加载火球图片
+            if not hydraFbImgHandle then
+                hydraFbImgHandle = nvgCreateImage(nvg, "image/hydra_fireball_20260410152201.png", 0)
+            end
+            if hydraFbImgHandle and hydraFbImgHandle > 0 then
+                local fbSize = 20
+                local half = fbSize * 0.5
+                nvgBeginPath(nvg)
+                nvgRect(nvg, sx - half, sy - half, fbSize, fbSize)
+                local imgPaint = nvgImagePattern(nvg, sx - half, sy - half, fbSize, fbSize, 0, hydraFbImgHandle, 1)
+                nvgFillPaint(nvg, imgPaint)
+                nvgFill(nvg)
+            end
+            -- 火球光晕
             nvgBeginPath(nvg)
-            nvgRect(nvg, sx - half, sy - half, size, size)
-            local imgPaint = nvgImagePattern(nvg, sx - half, sy - half, size, size, 0, projImgHandle, 1)
-            nvgFillPaint(nvg, imgPaint)
+            nvgCircle(nvg, sx, sy, 12)
+            nvgFillColor(nvg, nvgRGBA(255, 140, 30, 40))
+            nvgFill(nvg)
+        else
+            if projImgHandle and projImgHandle >= 0 then
+                local half = size * 0.5
+                nvgBeginPath(nvg)
+                nvgRect(nvg, sx - half, sy - half, size, size)
+                local imgPaint = nvgImagePattern(nvg, sx - half, sy - half, size, size, 0, projImgHandle, 1)
+                nvgFillPaint(nvg, imgPaint)
+                nvgFill(nvg)
+            end
+            -- 弹体外层光晕
+            nvgBeginPath(nvg)
+            nvgCircle(nvg, sx, sy, size * 0.7)
+            nvgFillColor(nvg, proj.isCrit and nvgRGBA(255, 150, 255, 35) or nvgRGBA(180, 100, 255, 25))
             nvgFill(nvg)
         end
-
-        -- 弹体外层光晕
-        nvgBeginPath(nvg)
-        nvgCircle(nvg, sx, sy, size * 0.7)
-        nvgFillColor(nvg, proj.isCrit and nvgRGBA(255, 150, 255, 35) or nvgRGBA(180, 100, 255, 25))
-        nvgFill(nvg)
         ::continue_proj::
     end
 end

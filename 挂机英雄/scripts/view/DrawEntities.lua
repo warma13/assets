@@ -9,6 +9,7 @@ function DrawEntities.Install(BattleView, imgHandles)
     local playerSheetHandle = nil   -- 攻击序列帧 sprite sheet (4帧横排)
     local SHEET_COLS        = 4     -- 序列帧列数
     local iceArmorShieldHandle = nil -- 寒冰甲屏障图片
+    local flameShieldHandle = nil   -- 火焰护盾屏障图片
     local coinFrameHandles  = {}   -- {1..4 -> handle}
     local COIN_FRAME_PATHS  = {
         "coin_frame1_20260306122454.png",
@@ -348,7 +349,6 @@ function DrawEntities.Install(BattleView, imgHandles)
                     goto continue_enemy
                 end
                 local r = e.radius or 16
-                local c = e.color or { 255, 50, 50 }
                 local imgSize = r * 3.3  -- 图片显示尺寸略大于碰撞半径 (2.2 * 1.5)
 
                 -- 怪物图片渲染
@@ -380,12 +380,12 @@ function DrawEntities.Install(BattleView, imgHandles)
                     nvgFill(nvg)
                     nvgRestore(nvg)
                 else
-                    -- 兜底：无图片时用圆圈
+                    -- 兜底：无图片时用统一红色圆圈（不再按 e.color 区分色调）
                     nvgBeginPath(nvg)
                     nvgCircle(nvg, sx, sy, r)
-                    nvgFillColor(nvg, nvgRGBA(c[1], c[2], c[3], 220))
+                    nvgFillColor(nvg, nvgRGBA(255, 50, 50, 220))
                     nvgFill(nvg)
-                    nvgStrokeColor(nvg, nvgRGBA(c[1], c[2], c[3], 120))
+                    nvgStrokeColor(nvg, nvgRGBA(255, 50, 50, 120))
                     nvgStrokeWidth(nvg, 1.5)
                     nvgStroke(nvg)
                 end
@@ -602,6 +602,31 @@ function DrawEntities.Install(BattleView, imgHandles)
                 nvgRestore(nvg)
             end
         end
+
+        -- 火焰护盾持续显示
+        if GameState.flameShieldTimer and GameState.flameShieldTimer > 0 then
+            if not flameShieldHandle then
+                flameShieldHandle = nvgCreateImage(nvg, "image/flame_shield_20260410130944.png", 0)
+            end
+            if flameShieldHandle and flameShieldHandle >= 0 then
+                local shieldSize = imgSize * 1.6
+                -- 呼吸脉动动画（频率略快于寒冰甲，体现火焰跳动感）
+                local t = bs.time or 0
+                local pulse = 1.0 + math.sin(t * 3.8) * 0.06
+                local drawSize = shieldSize * pulse
+                local halfDraw = drawSize * 0.5
+                -- 透明度呼吸
+                local baseAlpha = 0.7 + math.sin(t * 3.0 + 0.5) * 0.15
+                nvgSave(nvg)
+                nvgBeginPath(nvg)
+                nvgRect(nvg, sx - halfDraw, sy - halfDraw, drawSize, drawSize)
+                local paint = nvgImagePattern(nvg, sx - halfDraw, sy - halfDraw,
+                    drawSize, drawSize, 0, flameShieldHandle, baseAlpha)
+                nvgFillPaint(nvg, paint)
+                nvgFill(nvg)
+                nvgRestore(nvg)
+            end
+        end
     end
 
     -- ========================================================================
@@ -703,38 +728,83 @@ function DrawEntities.Install(BattleView, imgHandles)
     -- 元素精灵 (水蓝色光球环绕玩家)
     -- ========================================================================
 
+    -- 技能精灵图片句柄 (延迟加载)
+    local hydraImgHandle = nil
+    local lightningSpearImgHandle = nil
+
     function BattleView:DrawSpirits(nvg, l, bs)
         local GameState = require("GameState")
         local spirits = GameState.spirits
         if not spirits or #spirits == 0 then return end
 
+        -- 延迟加载精灵图片
+        if not hydraImgHandle then
+            hydraImgHandle = nvgCreateImage(nvg, "image/hydra_snake_20260410144843.png", 0)
+            if not hydraImgHandle or hydraImgHandle <= 0 then hydraImgHandle = 0 end
+        end
+        if not lightningSpearImgHandle then
+            lightningSpearImgHandle = nvgCreateImage(nvg, "image/lightning_spear_20260410152150.png", 0)
+            if not lightningSpearImgHandle or lightningSpearImgHandle <= 0 then lightningSpearImgHandle = 0 end
+        end
+
         local time = bs.time or 0
         for _, sp in ipairs(spirits) do
             local sx = l.x + sp.x
             local sy = l.y + sp.y
-            local pulse = 0.7 + math.sin(time * 6 + (sp.orbitAngle or 0)) * 0.3
-            local r = 6 * pulse
 
-            -- 精灵核心 (水蓝色)
-            nvgBeginPath(nvg)
-            nvgCircle(nvg, sx, sy, r)
-            nvgFillColor(nvg, nvgRGBA(60, 180, 255, 220))
-            nvgFill(nvg)
-
-            -- 外层光晕
-            local glow = nvgRadialGradient(nvg, sx, sy, r, r * 2.5,
-                nvgRGBA(60, 180, 255, 80), nvgRGBA(60, 180, 255, 0))
-            nvgBeginPath(nvg)
-            nvgCircle(nvg, sx, sy, r * 2.5)
-            nvgFillPaint(nvg, glow)
-            nvgFill(nvg)
-
-            -- 攻击闪烁 (精灵攻击时短暂变亮)
-            if sp.atkCD and sp.atkCD < 0.1 then
+            if sp.source == "hydra" and hydraImgHandle > 0 then
+                -- 🔥 九头蛇: 独立移动的火蛇精灵
+                local size = 40
+                local bob = math.sin(time * 4 + (sp.orbitAngle or 0)) * 3
+                local drawY = sy + bob
+                -- 使用 AI 层计算的朝向
+                local facing = (sp._faceDirX or 1)
+                nvgSave(nvg)
+                nvgTranslate(nvg, sx, drawY)
+                nvgScale(nvg, facing, 1)
+                local pat = nvgImagePattern(nvg, -size/2, -size/2, size, size, 0, hydraImgHandle, 1.0)
                 nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, r * 1.5)
-                nvgFillColor(nvg, nvgRGBA(180, 230, 255, 120))
+                nvgRect(nvg, -size/2, -size/2, size, size)
+                nvgFillPaint(nvg, pat)
                 nvgFill(nvg)
+                nvgRestore(nvg)
+
+            elseif sp.source == "lightning_spear" and lightningSpearImgHandle > 0 then
+                -- ⚡ 闪电矛: 追踪穿透弹体，朝移动方向旋转
+                local imgW = 48
+                local imgH = 32
+                -- 使用 AI 层同步的 moveAngle (即 orbitAngle)
+                local angle = sp.orbitAngle or 0
+                nvgSave(nvg)
+                nvgTranslate(nvg, sx, sy)
+                nvgRotate(nvg, angle)
+                local pat = nvgImagePattern(nvg, -imgW/2, -imgH/2, imgW, imgH, 0, lightningSpearImgHandle, 1.0)
+                nvgBeginPath(nvg)
+                nvgRect(nvg, -imgW/2, -imgH/2, imgW, imgH)
+                nvgFillPaint(nvg, pat)
+                nvgFill(nvg)
+                nvgRestore(nvg)
+
+            else
+                -- 默认: 通用精灵 (水蓝色圆)
+                local pulse = 0.7 + math.sin(time * 6 + (sp.orbitAngle or 0)) * 0.3
+                local r = 6 * pulse
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, sx, sy, r)
+                nvgFillColor(nvg, nvgRGBA(60, 180, 255, 220))
+                nvgFill(nvg)
+                local glow = nvgRadialGradient(nvg, sx, sy, r, r * 2.5,
+                    nvgRGBA(60, 180, 255, 80), nvgRGBA(60, 180, 255, 0))
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, sx, sy, r * 2.5)
+                nvgFillPaint(nvg, glow)
+                nvgFill(nvg)
+                if sp.atkCD and sp.atkCD < 0.1 then
+                    nvgBeginPath(nvg)
+                    nvgCircle(nvg, sx, sy, r * 1.5)
+                    nvgFillColor(nvg, nvgRGBA(180, 230, 255, 120))
+                    nvgFill(nvg)
+                end
             end
         end
     end

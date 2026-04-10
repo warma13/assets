@@ -99,6 +99,12 @@ function EnemySystem.UpdateEnemyAI(dt, bs)
             else
                 e.knockbackVx = 0
                 e.knockbackVy = 0
+                -- 眩晕处理: 眩晕期间跳过移动和攻击
+                if e.stunTimer and e.stunTimer > 0 then
+                    e.stunTimer = e.stunTimer - dt
+                    if e.stunTimer <= 0 then e.stunTimer = 0 end
+                    goto continue_enemy_ai
+                end
                 -- 减速处理
                 local speedMul = 1.0
                 if e.slowTimer and e.slowTimer > 0 then
@@ -192,6 +198,7 @@ function EnemySystem.UpdateEnemyAI(dt, bs)
                 local margin = e.radius or 16
                 e.x = math.max(margin, math.min(bs.areaW - margin, e.x))
                 e.y = math.max(margin, math.min(bs.areaH - margin, e.y))
+                ::continue_enemy_ai::
             end
         end
     end

@@ -356,35 +356,63 @@ function DrawEffects.Install(BattleView, imgHandles)
                 end
 
             -- ==============================================================
-            -- ⚡ spark — 电花: 黄色闪电粒子散射
+            -- ⚡ spark — 电花: 从玩家到目标的多段闪电链
             -- ==============================================================
             elseif eff.type == "spark" then
-                local aw = eff.areaW or l.w
-                local ah = eff.areaH or l.h
                 local time = bs.time or 0
-                -- 闪电背景闪烁
-                local flashA = math.floor(40 * lifeRatio * (0.5 + math.sin(time * 20) * 0.5))
-                nvgBeginPath(nvg)
-                nvgRect(nvg, l.x, l.y, aw, ah)
-                nvgFillColor(nvg, nvgRGBA(255, 240, 100, flashA))
-                nvgFill(nvg)
-                -- 电弧粒子 (LOD: 6→3→1)
-                local sparkCount = lod == 0 and 6 or (lod == 1 and 3 or 1)
-                for si = 1, sparkCount do
-                    local seed = time * 8 + si * 53.7
-                    local spx = sx + math.cos(seed) * 40
-                    local spy = sy + math.sin(seed * 1.3) * 30
+                local tx = l.x + (eff.targetX or eff.x or 0)
+                local ty = l.y + (eff.targetY or eff.y or 0)
+                local hits = eff.hitCount or 4
+
+                -- 每段闪电依次亮起 (按生命周期分段)
+                local segDur = 1.0 / hits
+                local curSeg = math.floor((1.0 - lifeRatio) / segDur) + 1
+                if curSeg > hits then curSeg = hits end
+
+                -- 从玩家到目标的锯齿闪电链
+                for si = 1, math.min(curSeg, hits) do
+                    local segAlpha = alpha
+                    if si < curSeg then
+                        -- 前几段逐渐变暗
+                        segAlpha = math.floor(alpha * 0.3)
+                    end
+                    -- 每段闪电用不同随机偏移模拟锯齿
+                    local segments = lod == 0 and 6 or (lod == 1 and 4 or 3)
                     nvgBeginPath(nvg)
                     nvgMoveTo(nvg, sx, sy)
-                    nvgLineTo(nvg, spx, spy)
-                    nvgStrokeColor(nvg, nvgRGBA(255, 240, 120, math.floor(alpha * 0.8)))
-                    nvgStrokeWidth(nvg, 2 * lifeRatio)
+                    for j = 1, segments - 1 do
+                        local t = j / segments
+                        local mx = sx + (tx - sx) * t
+                        local my = sy + (ty - sy) * t
+                        -- 锯齿偏移，每段每帧不同
+                        local seed = si * 71.3 + j * 37.1 + time * 12
+                        local offX = math.sin(seed) * 12
+                        local offY = math.cos(seed * 1.7) * 10
+                        nvgLineTo(nvg, mx + offX, my + offY)
+                    end
+                    nvgLineTo(nvg, tx, ty)
+                    nvgStrokeColor(nvg, nvgRGBA(255, 240, 100, segAlpha))
+                    nvgStrokeWidth(nvg, si == curSeg and 2.5 or 1.5)
                     nvgStroke(nvg)
+                end
+
+                -- 目标处电击光晕
+                local glowR = 15 + 5 * math.sin(time * 25)
+                local glowA = math.floor(alpha * 0.6)
+                if lod < 2 then
+                    local glow = nvgRadialGradient(nvg, tx, ty, glowR * 0.3, glowR,
+                        nvgRGBA(255, 240, 100, glowA),
+                        nvgRGBA(255, 240, 100, 0))
                     nvgBeginPath(nvg)
-                    nvgCircle(nvg, spx, spy, 3)
-                    nvgFillColor(nvg, nvgRGBA(255, 255, 200, alpha))
+                    nvgCircle(nvg, tx, ty, glowR)
+                    nvgFillPaint(nvg, glow)
                     nvgFill(nvg)
                 end
+                -- 目标处火花
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, tx, ty, 4 * lifeRatio)
+                nvgFillColor(nvg, nvgRGBA(255, 255, 200, alpha))
+                nvgFill(nvg)
 
             -- ==============================================================
             -- ⚔️ arcane_strike — 奥术打击: 近战弧形闪光
@@ -436,6 +464,58 @@ function DrawEffects.Install(BattleView, imgHandles)
                 nvgStroke(nvg)
 
             -- ==============================================================
+            -- 🔥 fireball_cast — 火球飞行弹道: 从玩家飞向目标
+            -- ==============================================================
+            elseif eff.type == "fireball_cast" then
+                local progress = 1.0 - lifeRatio  -- 0→1 飞行进度
+                local tx = l.x + (eff.targetX or eff.x or 0)
+                local ty = l.y + (eff.targetY or eff.y or 0)
+                -- 弹丸当前位置 (线性插值)
+                local bx = sx + (tx - sx) * progress
+                local by = sy + (ty - sy) * progress
+                local r = 8 + progress * 4  -- 飞行中逐渐膨胀
+
+                -- 火球主体 (橙红实心)
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, bx, by, r)
+                nvgFillColor(nvg, nvgRGBA(255, 140, 30, alpha))
+                nvgFill(nvg)
+
+                -- 火球内芯 (亮黄)
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, bx, by, r * 0.45)
+                nvgFillColor(nvg, nvgRGBA(255, 240, 160, alpha))
+                nvgFill(nvg)
+
+                -- 外层火焰光晕
+                local trailGlow = nvgRadialGradient(nvg, bx, by, r * 0.5, r * 2.5,
+                    nvgRGBA(255, 80, 0, math.floor(alpha * 0.5)),
+                    nvgRGBA(255, 40, 0, 0))
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, bx, by, r * 2.5)
+                nvgFillPaint(nvg, trailGlow)
+                nvgFill(nvg)
+
+                -- 尾焰拖尾 (lod < 2)
+                if lod < 2 then
+                    local dx, dy = tx - sx, ty - sy
+                    local tailCount = lod == 0 and 4 or 2
+                    for ti = 1, tailCount do
+                        local tt = math.max(0, progress - ti * 0.06)
+                        local tailX = sx + (tx - sx) * tt
+                        local tailY = sy + (ty - sy) * tt
+                        local tailR = r * (0.7 - ti * 0.12)
+                        local tailA = math.floor(alpha * (0.5 - ti * 0.1))
+                        if tailR > 0 and tailA > 0 then
+                            nvgBeginPath(nvg)
+                            nvgCircle(nvg, tailX, tailY, tailR)
+                            nvgFillColor(nvg, nvgRGBA(255, 100, 0, tailA))
+                            nvgFill(nvg)
+                        end
+                    end
+                end
+
+            -- ==============================================================
             -- 🔥 fireball — 火球术: AoE橙红爆炸扩散环
             -- ==============================================================
             elseif eff.type == "fireball" then
@@ -467,39 +547,154 @@ function DrawEffects.Install(BattleView, imgHandles)
                 end
 
             -- ==============================================================
-            -- 🔥 incinerate — 焚烧: 全屏橙红热浪
+            -- 🔥 incinerate_channel — 焚烧引导: 从玩家到目标的火焰射线
             -- ==============================================================
-            elseif eff.type == "incinerate" then
-                local aw = eff.areaW or l.w
-                local ah = eff.areaH or l.h
-                local cx = l.x + aw * 0.5
-                local cy = l.y + ah * 0.5
-                local progress = 1.0 - lifeRatio
-                -- 橙红色脉冲
-                local pulseA = math.floor(60 * lifeRatio * (0.6 + math.sin((bs.time or 0) * 12) * 0.4))
-                nvgBeginPath(nvg)
-                nvgRect(nvg, l.x, l.y, aw, ah)
-                nvgFillColor(nvg, nvgRGBA(255, 80, 0, pulseA))
-                nvgFill(nvg)
-                -- 中心热浪环
-                local waveR = math.max(aw, ah) * 0.3 * (0.5 + progress * 0.5)
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, cx, cy, waveR)
-                nvgStrokeColor(nvg, nvgRGBA(255, 160, 40, math.floor(alpha * 0.6)))
-                nvgStrokeWidth(nvg, 3 * lifeRatio)
-                nvgStroke(nvg)
-                -- 火焰粒子 (lod=0)
-                if lod == 0 then
-                    for fi = 1, 4 do
-                        local seed = (bs.time or 0) * 6 + fi * 83
-                        local px = l.x + (math.sin(seed) * 0.5 + 0.5) * aw
-                        local py = l.y + (math.cos(seed * 1.5) * 0.5 + 0.5) * ah
+            elseif eff.type == "incinerate_channel" then
+                local time = bs.time or 0
+                -- 从 ChannelSystem 实时读取玩家和目标坐标 (支持重定向)
+                local ok_cs, CS = pcall(require, "battle.ChannelSystem")
+                local csState = ok_cs and CS.GetState() or nil
+                if csState and csState.skillId == "incinerate" then
+                    local p = csState.bs and csState.bs.playerBattle
+                    local target = csState.target
+                    if p and target and not target.dead then
+                        local bx = l.x + p.x
+                        local by = l.y + p.y
+                        local tx = l.x + target.x
+                        local ty = l.y + target.y
+                        local dx, dy = tx - bx, ty - by
+                        local dist = math.sqrt(dx * dx + dy * dy)
+                        local angle = math.atan(dy, dx)
+
+                        -- 引导进度 (用于射线宽度递增)
+                        local channelProg = 1.0 - lifeRatio -- 0→1
+                        local beamW = 4 + channelProg * 6 -- 4→10 逐渐变粗
+                        local pulse = 1.0 + math.sin(time * 10) * 0.15
+                        beamW = beamW * pulse
+
+                        -- 射线主体: 渐变矩形 (从玩家到目标)
+                        nvgSave(nvg)
+                        nvgTranslate(nvg, bx, by)
+                        nvgRotate(nvg, angle)
+                        local grad = nvgLinearGradient(nvg, 0, 0, dist, 0,
+                            nvgRGBA(255, 200, 60, math.floor(alpha * 0.9)),
+                            nvgRGBA(255, 80, 0, math.floor(alpha * 0.7)))
                         nvgBeginPath(nvg)
-                        nvgCircle(nvg, px, py, 3 + math.sin(seed * 2) * 2)
-                        nvgFillColor(nvg, nvgRGBA(255, 200, 60, math.floor(alpha * 0.6)))
+                        nvgRect(nvg, 0, -beamW / 2, dist, beamW)
+                        nvgFillPaint(nvg, grad)
+                        nvgFill(nvg)
+
+                        -- 射线内芯 (更亮更窄)
+                        local coreW = beamW * 0.35
+                        local coreGrad = nvgLinearGradient(nvg, 0, 0, dist, 0,
+                            nvgRGBA(255, 255, 200, math.floor(alpha * 0.8)),
+                            nvgRGBA(255, 220, 100, math.floor(alpha * 0.5)))
+                        nvgBeginPath(nvg)
+                        nvgRect(nvg, 0, -coreW / 2, dist, coreW)
+                        nvgFillPaint(nvg, coreGrad)
+                        nvgFill(nvg)
+                        nvgRestore(nvg)
+
+                        -- 射线外层光晕 (lod < 2)
+                        if lod < 2 then
+                            nvgSave(nvg)
+                            nvgTranslate(nvg, bx, by)
+                            nvgRotate(nvg, angle)
+                            local glowW = beamW * 2.5
+                            local glowGrad = nvgLinearGradient(nvg, 0, 0, dist, 0,
+                                nvgRGBA(255, 120, 0, math.floor(alpha * 0.2)),
+                                nvgRGBA(255, 60, 0, 0))
+                            nvgBeginPath(nvg)
+                            nvgRect(nvg, 0, -glowW / 2, dist, glowW)
+                            nvgFillPaint(nvg, glowGrad)
+                            nvgFill(nvg)
+                            nvgRestore(nvg)
+                        end
+
+                        -- 沿射线的火花粒子 (lod == 0)
+                        if lod == 0 then
+                            for fi = 1, 6 do
+                                local seed = time * 7 + fi * 53.7
+                                local t = math.fmod(seed * 0.3, 1.0)
+                                local px = bx + dx * t + math.sin(seed * 4) * beamW * 1.2
+                                local py = by + dy * t + math.cos(seed * 3) * beamW * 1.2
+                                local pSize = 1.5 + math.sin(seed * 2) * 1.0
+                                nvgBeginPath(nvg)
+                                nvgCircle(nvg, px, py, pSize)
+                                nvgFillColor(nvg, nvgRGBA(255, 200, 60, math.floor(alpha * 0.6)))
+                                nvgFill(nvg)
+                            end
+                        end
+
+                        -- 起点光源 (玩家手部)
+                        local srcGlow = nvgRadialGradient(nvg, bx, by, 2, 12,
+                            nvgRGBA(255, 240, 150, math.floor(alpha * 0.7)),
+                            nvgRGBA(255, 120, 0, 0))
+                        nvgBeginPath(nvg)
+                        nvgCircle(nvg, bx, by, 12)
+                        nvgFillPaint(nvg, srcGlow)
+                        nvgFill(nvg)
+
+                        -- 目标命中光点 (持续脉动)
+                        local hitR = 8 + 4 * math.sin(time * 12)
+                        local hitGlow = nvgRadialGradient(nvg, tx, ty, hitR * 0.2, hitR,
+                            nvgRGBA(255, 160, 30, math.floor(alpha * 0.8)),
+                            nvgRGBA(255, 60, 0, 0))
+                        nvgBeginPath(nvg)
+                        nvgCircle(nvg, tx, ty, hitR)
+                        nvgFillPaint(nvg, hitGlow)
                         nvgFill(nvg)
                     end
                 end
+
+            -- ==============================================================
+            -- 🔥 incinerate_tick — 焚烧每跳: 射线闪亮 + 目标爆裂
+            -- ==============================================================
+            elseif eff.type == "incinerate_tick" then
+                local progress = 1.0 - lifeRatio
+                local tick = eff.tick or 1
+                local totalTicks = eff.totalTicks or 4
+                -- 命中强度随 tick 递增 (ramp 视觉)
+                local intensity = 0.6 + 0.4 * (tick / totalTicks)
+
+                -- 射线闪白 (从玩家到目标的一道白光, 快速消散)
+                local tx = l.x + (eff.targetX or eff.x or 0)
+                local ty = l.y + (eff.targetY or eff.y or 0)
+                local flashW = 3 * lifeRatio * intensity
+                local dx2, dy2 = tx - sx, ty - sy
+                local dist2 = math.sqrt(dx2 * dx2 + dy2 * dy2)
+                local angle2 = math.atan(dy2, dx2)
+                if dist2 > 1 then
+                    nvgSave(nvg)
+                    nvgTranslate(nvg, sx, sy)
+                    nvgRotate(nvg, angle2)
+                    nvgBeginPath(nvg)
+                    nvgRect(nvg, 0, -flashW / 2, dist2, flashW)
+                    nvgFillColor(nvg, nvgRGBA(255, 255, 220, math.floor(alpha * 0.7 * intensity)))
+                    nvgFill(nvg)
+                    nvgRestore(nvg)
+                end
+
+                -- 目标位置爆裂光晕
+                local burstR = (15 + 12 * intensity) * (1.0 + progress * 0.4)
+                local glow = nvgRadialGradient(nvg, tx, ty, burstR * 0.1, burstR,
+                    nvgRGBA(255, 120, 0, math.floor(alpha * 0.8 * intensity)),
+                    nvgRGBA(255, 60, 0, 0))
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, tx, ty, burstR)
+                nvgFillPaint(nvg, glow)
+                nvgFill(nvg)
+                -- 中心亮点
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, tx, ty, 4 * lifeRatio * intensity)
+                nvgFillColor(nvg, nvgRGBA(255, 250, 200, alpha))
+                nvgFill(nvg)
+                -- 冲击环
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, tx, ty, burstR * 0.8)
+                nvgStrokeColor(nvg, nvgRGBA(255, 180, 40, math.floor(alpha * 0.5 * intensity)))
+                nvgStrokeWidth(nvg, 2 * lifeRatio * intensity)
+                nvgStroke(nvg)
 
             -- ==============================================================
             -- ❄️ ice_shards — 冰碎片: 施放瞬间冰蓝闪光 (弹道由 DrawFrostShards 渲染)
@@ -516,78 +711,297 @@ function DrawEffects.Install(BattleView, imgHandles)
                 nvgFill(nvg)
 
             -- ==============================================================
-            -- ⚡ charged_bolts — 电荷弹: 黄色AoE电击
+            -- ⚡ charged_bolts — 电荷弹: 从玩家散射到各目标的电弧
             -- ==============================================================
             elseif eff.type == "charged_bolts" then
-                local r = eff.radius or 90
-                local expand = 1.0 + (1.0 - lifeRatio) * 0.3
-                local er = r * expand
-                -- 电击光晕
-                local glow = nvgRadialGradient(nvg, sx, sy, er * 0.2, er,
-                    nvgRGBA(255, 240, 80, math.floor(alpha * 0.4)),
-                    nvgRGBA(255, 200, 40, 0))
+                local time = bs.time or 0
+                local progress = 1.0 - lifeRatio  -- 0→1 飞行进度
+                local boltCount = eff.boltCount or 5
+                local targets = eff.boltTargets
+
+                -- 起点光源 (玩家手部电弧汇聚)
+                local srcGlow = nvgRadialGradient(nvg, sx, sy, 2, 14,
+                    nvgRGBA(255, 255, 200, math.floor(alpha * 0.7)),
+                    nvgRGBA(255, 240, 80, 0))
                 nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, er)
+                nvgCircle(nvg, sx, sy, 14)
+                nvgFillPaint(nvg, srcGlow)
+                nvgFill(nvg)
+
+                -- 每枚弹体: 从玩家飞向目标的锯齿电弧
+                for bi = 1, boltCount do
+                    local tgt = targets and targets[bi]
+                    if tgt then
+                        local tx = l.x + tgt.x
+                        local ty = l.y + tgt.y
+                        -- 每枚弹体有时间偏移 (散射感)
+                        local boltDelay = (bi - 1) * 0.04
+                        local boltProg = math.max(0, math.min(1.0, (progress - boltDelay) / 0.8))
+
+                        if boltProg > 0 then
+                            -- 弹丸当前位置
+                            local bx = sx + (tx - sx) * boltProg
+                            local by = sy + (ty - sy) * boltProg
+
+                            -- 锯齿电弧路径 (从玩家到弹丸当前位置)
+                            local segCount = lod == 0 and 5 or 3
+                            local dx, dy = bx - sx, by - sy
+                            local arcDist = math.sqrt(dx * dx + dy * dy)
+                            nvgBeginPath(nvg)
+                            nvgMoveTo(nvg, sx, sy)
+                            for si = 1, segCount - 1 do
+                                local t = si / segCount
+                                local mx = sx + dx * t
+                                local my = sy + dy * t
+                                local seed = bi * 31.7 + si * 17.3 + time * 15
+                                local jitter = 6 + arcDist * 0.02
+                                mx = mx + math.sin(seed) * jitter
+                                my = my + math.cos(seed * 1.4) * jitter
+                                nvgLineTo(nvg, mx, my)
+                            end
+                            nvgLineTo(nvg, bx, by)
+                            local boltAlpha = math.floor(alpha * (0.7 + 0.3 * math.sin(time * 20 + bi * 2)))
+                            nvgStrokeColor(nvg, nvgRGBA(255, 240, 100, boltAlpha))
+                            nvgStrokeWidth(nvg, 2 * lifeRatio)
+                            nvgStroke(nvg)
+
+                            -- 弹丸头部光点
+                            local headR = 4 + math.sin(time * 18 + bi) * 1.5
+                            nvgBeginPath(nvg)
+                            nvgCircle(nvg, bx, by, headR)
+                            nvgFillColor(nvg, nvgRGBA(255, 255, 200, boltAlpha))
+                            nvgFill(nvg)
+
+                            -- 命中闪光 (弹丸到达目标时)
+                            if boltProg > 0.9 then
+                                local hitA = math.floor(alpha * (boltProg - 0.9) / 0.1)
+                                local hitGlow = nvgRadialGradient(nvg, tx, ty, 2, 12,
+                                    nvgRGBA(255, 255, 180, hitA),
+                                    nvgRGBA(255, 240, 80, 0))
+                                nvgBeginPath(nvg)
+                                nvgCircle(nvg, tx, ty, 12)
+                                nvgFillPaint(nvg, hitGlow)
+                                nvgFill(nvg)
+                            end
+                        end
+                    end
+                end
+
+            -- ==============================================================
+            -- ⚡ chain_lightning — 连锁闪电: 沿弹跳路径的顺序闪电链
+            -- ==============================================================
+            elseif eff.type == "chain_lightning" then
+                local time = bs.time or 0
+                local path = eff.chainPath
+                local totalBounces = eff.bounces or 6
+
+                if path and #path >= 2 then
+                    local progress = 1.0 - lifeRatio  -- 0→1 链传播进度
+                    -- 当前已传播到第几段 (含小数)
+                    local totalSegs = #path - 1
+                    local activeSegs = progress * totalSegs
+
+                    for si = 1, totalSegs do
+                        -- 每段的可见度 (顺序点亮, 依次消散)
+                        local segStart = (si - 1)
+                        local segVis = math.max(0, math.min(1.0, activeSegs - segStart))
+                        if segVis <= 0 then break end
+
+                        -- 前方段逐渐消散
+                        local fadeOut = 1.0
+                        if activeSegs > si + 2 then
+                            fadeOut = math.max(0, 1.0 - (activeSegs - si - 2) * 0.3)
+                        end
+                        if fadeOut <= 0 then goto continue_chain end
+
+                        local p1 = path[si]
+                        local p2 = path[si + 1]
+                        local x1 = l.x + p1.x
+                        local y1 = l.y + p1.y
+                        local x2 = l.x + p2.x
+                        local y2 = l.y + p2.y
+                        -- 部分可见: 截取到当前传播位置
+                        if segVis < 1.0 then
+                            x2 = x1 + (x2 - x1) * segVis
+                            y2 = y1 + (y2 - y1) * segVis
+                        end
+
+                        local segAlpha = math.floor(alpha * fadeOut)
+
+                        -- 锯齿闪电弧线
+                        local segCount = lod == 0 and 4 or 2
+                        local dx, dy = x2 - x1, y2 - y1
+                        nvgBeginPath(nvg)
+                        nvgMoveTo(nvg, x1, y1)
+                        for ji = 1, segCount - 1 do
+                            local t = ji / segCount
+                            local mx = x1 + dx * t
+                            local my = y1 + dy * t
+                            local seed = si * 53.1 + ji * 17.9 + time * 12
+                            mx = mx + math.sin(seed) * 10
+                            my = my + math.cos(seed * 1.6) * 8
+                            nvgLineTo(nvg, mx, my)
+                        end
+                        nvgLineTo(nvg, x2, y2)
+                        -- 主线
+                        nvgStrokeColor(nvg, nvgRGBA(255, 255, 180, segAlpha))
+                        nvgStrokeWidth(nvg, 2.5 * lifeRatio)
+                        nvgStroke(nvg)
+
+                        -- 外层光晕线 (lod < 2)
+                        if lod < 2 then
+                            nvgBeginPath(nvg)
+                            nvgMoveTo(nvg, x1, y1)
+                            nvgLineTo(nvg, x2, y2)
+                            nvgStrokeColor(nvg, nvgRGBA(255, 240, 80, math.floor(segAlpha * 0.25)))
+                            nvgStrokeWidth(nvg, 6 * lifeRatio)
+                            nvgStroke(nvg)
+                        end
+
+                        -- 弹跳节点光点 (目标位置)
+                        if segVis >= 1.0 then
+                            local nodeR = 5 + math.sin(time * 15 + si * 2) * 2
+                            local nodeGlow = nvgRadialGradient(nvg, x2, y2, nodeR * 0.2, nodeR,
+                                nvgRGBA(255, 255, 200, segAlpha),
+                                nvgRGBA(255, 240, 80, 0))
+                            nvgBeginPath(nvg)
+                            nvgCircle(nvg, x2, y2, nodeR)
+                            nvgFillPaint(nvg, nodeGlow)
+                            nvgFill(nvg)
+                        end
+
+                        ::continue_chain::
+                    end
+
+                    -- 起点光源
+                    local srcGlow = nvgRadialGradient(nvg, sx, sy, 2, 10,
+                        nvgRGBA(255, 255, 200, math.floor(alpha * 0.6)),
+                        nvgRGBA(255, 240, 80, 0))
+                    nvgBeginPath(nvg)
+                    nvgCircle(nvg, sx, sy, 10)
+                    nvgFillPaint(nvg, srcGlow)
+                    nvgFill(nvg)
+                end
+
+            -- ==============================================================
+            -- 🔥 fireball_secondary — 火球二次爆炸: 较小的橙红脉冲
+            -- ==============================================================
+            elseif eff.type == "fireball_secondary" then
+                local r = eff.radius or 60
+                local progress = 1.0 - lifeRatio
+                local expandR = r * math.min(1.0, progress * 2.5)
+                local glow = nvgRadialGradient(nvg, sx, sy, expandR * 0.1, expandR,
+                    nvgRGBA(255, 180, 60, math.floor(alpha * 0.6)),
+                    nvgRGBA(255, 100, 0, 0))
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgFillPaint(nvg, glow)
+                nvgFill(nvg)
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgStrokeColor(nvg, nvgRGBA(255, 200, 80, math.floor(alpha * 0.8)))
+                nvgStrokeWidth(nvg, 2 * lifeRatio)
+                nvgStroke(nvg)
+
+            -- ==============================================================
+            -- 🔥 incinerate_explosion — 焚烧结束爆炸: 全屏橙红闪光
+            -- ==============================================================
+            elseif eff.type == "incinerate_explosion" then
+                local aw = eff.areaW or l.w
+                local ah = eff.areaH or l.h
+                local cx = l.x + aw * 0.5
+                local cy = l.y + ah * 0.5
+                local progress = 1.0 - lifeRatio
+                local flashA = math.floor(100 * lifeRatio * (progress < 0.2 and (progress / 0.2) or 1.0))
+                nvgBeginPath(nvg)
+                nvgRect(nvg, l.x, l.y, aw, ah)
+                nvgFillColor(nvg, nvgRGBA(255, 100, 0, flashA))
+                nvgFill(nvg)
+                local shockR = math.max(aw, ah) * 0.35 * math.min(1.0, progress * 2.5)
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, cx, cy, shockR)
+                nvgStrokeColor(nvg, nvgRGBA(255, 180, 40, math.floor(alpha * 0.7)))
+                nvgStrokeWidth(nvg, 3 * lifeRatio)
+                nvgStroke(nvg)
+
+            -- ==============================================================
+            -- ⚡ charged_bolts_overload — 电荷过载: 黄色电弧爆发
+            -- ==============================================================
+            elseif eff.type == "charged_bolts_overload" then
+                local r = eff.radius or 80
+                local progress = 1.0 - lifeRatio
+                local expandR = r * math.min(1.0, progress * 2.0)
+                -- 中心电弧爆发
+                local glow = nvgRadialGradient(nvg, sx, sy, expandR * 0.1, expandR,
+                    nvgRGBA(255, 255, 120, math.floor(alpha * 0.5)),
+                    nvgRGBA(255, 220, 60, 0))
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, sx, sy, expandR)
                 nvgFillPaint(nvg, glow)
                 nvgFill(nvg)
                 -- 外环
                 nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, er)
-                nvgStrokeColor(nvg, nvgRGBA(255, 240, 100, alpha))
-                nvgStrokeWidth(nvg, 2 * lifeRatio)
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgStrokeColor(nvg, nvgRGBA(255, 255, 180, alpha))
+                nvgStrokeWidth(nvg, 2.5 * lifeRatio)
                 nvgStroke(nvg)
-                -- 电弧 (lod < 2)
+                -- 辐射电弧
                 if lod < 2 then
-                    local boltCount = lod == 0 and 5 or 3
-                    for bi = 1, boltCount do
-                        local angle = bi * (math.pi * 2 / boltCount) + (bs.time or 0) * 5
-                        local bx2 = sx + math.cos(angle) * er * 0.7
-                        local by2 = sy + math.sin(angle) * er * 0.7
+                    local arcCount = lod == 0 and 6 or 3
+                    for ai = 1, arcCount do
+                        local angle = ai * (math.pi * 2 / arcCount) + progress * 4
+                        local ax2 = sx + math.cos(angle) * expandR * 0.9
+                        local ay2 = sy + math.sin(angle) * expandR * 0.9
                         nvgBeginPath(nvg)
                         nvgMoveTo(nvg, sx, sy)
-                        nvgLineTo(nvg, bx2, by2)
-                        nvgStrokeColor(nvg, nvgRGBA(255, 255, 180, math.floor(alpha * 0.6)))
-                        nvgStrokeWidth(nvg, 1.5 * lifeRatio)
+                        local midX2 = (sx + ax2) * 0.5 + math.sin(angle * 3) * 8
+                        local midY2 = (sy + ay2) * 0.5 + math.cos(angle * 5) * 8
+                        nvgLineTo(nvg, midX2, midY2)
+                        nvgLineTo(nvg, ax2, ay2)
+                        nvgStrokeColor(nvg, nvgRGBA(255, 255, 200, math.floor(alpha * 0.7)))
+                        nvgStrokeWidth(nvg, 2 * lifeRatio)
                         nvgStroke(nvg)
                     end
                 end
 
             -- ==============================================================
-            -- ⚡ chain_lightning — 连锁闪电: 黄色弧线
+            -- ⚡ chain_lightning_thunder — 末尾雷暴AOE: 紫黄色冲击
             -- ==============================================================
-            elseif eff.type == "chain_lightning" then
-                local aw = eff.areaW or l.w
-                local ah = eff.areaH or l.h
-                local time = bs.time or 0
-                -- 全屏闪黄
-                local flashA = math.floor(50 * lifeRatio * (0.5 + math.sin(time * 15) * 0.5))
+            elseif eff.type == "chain_lightning_thunder" then
+                local r = eff.radius or 90
+                local progress = 1.0 - lifeRatio
+                local expandR = r * math.min(1.0, progress * 2.0)
+                -- 紫黄色冲击光晕
+                local glow = nvgRadialGradient(nvg, sx, sy, expandR * 0.15, expandR,
+                    nvgRGBA(220, 200, 255, math.floor(alpha * 0.5)),
+                    nvgRGBA(255, 240, 100, 0))
                 nvgBeginPath(nvg)
-                nvgRect(nvg, l.x, l.y, aw, ah)
-                nvgFillColor(nvg, nvgRGBA(255, 240, 80, flashA))
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgFillPaint(nvg, glow)
                 nvgFill(nvg)
-                -- 弹跳弧线 (LOD: 5→3→1)
-                local arcCount = lod == 0 and 5 or (lod == 1 and 3 or 1)
-                local prevX, prevY = sx, sy
-                for ai = 1, arcCount do
-                    local seed = time * 4 + ai * 71.3
-                    local nx = l.x + (math.sin(seed) * 0.5 + 0.5) * aw
-                    local ny = l.y + (math.cos(seed * 1.3) * 0.5 + 0.5) * ah
-                    -- 锯齿折线模拟闪电
+                -- 双层冲击环
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgStrokeColor(nvg, nvgRGBA(255, 240, 120, alpha))
+                nvgStrokeWidth(nvg, 3 * lifeRatio)
+                nvgStroke(nvg)
+                if lod < 2 then
                     nvgBeginPath(nvg)
-                    nvgMoveTo(nvg, prevX, prevY)
-                    local midX = (prevX + nx) * 0.5 + math.sin(seed * 3) * 15
-                    local midY = (prevY + ny) * 0.5 + math.cos(seed * 4) * 15
-                    nvgLineTo(nvg, midX, midY)
-                    nvgLineTo(nvg, nx, ny)
-                    nvgStrokeColor(nvg, nvgRGBA(255, 255, 180, math.floor(alpha * 0.9)))
+                    nvgCircle(nvg, sx, sy, expandR * 0.5)
+                    nvgStrokeColor(nvg, nvgRGBA(200, 180, 255, math.floor(alpha * 0.6)))
+                    nvgStrokeWidth(nvg, 2 * lifeRatio)
+                    nvgStroke(nvg)
+                end
+                -- 闪电劈落
+                if lod == 0 then
+                    nvgBeginPath(nvg)
+                    nvgMoveTo(nvg, sx, sy - expandR)
+                    nvgLineTo(nvg, sx + 6, sy - expandR * 0.5)
+                    nvgLineTo(nvg, sx - 4, sy - expandR * 0.3)
+                    nvgLineTo(nvg, sx, sy)
+                    nvgStrokeColor(nvg, nvgRGBA(255, 255, 200, alpha))
                     nvgStrokeWidth(nvg, 2.5 * lifeRatio)
                     nvgStroke(nvg)
-                    -- 节点光点
-                    nvgBeginPath(nvg)
-                    nvgCircle(nvg, nx, ny, 4)
-                    nvgFillColor(nvg, nvgRGBA(255, 255, 220, alpha))
-                    nvgFill(nvg)
-                    prevX, prevY = nx, ny
                 end
 
             -- ==============================================================
@@ -707,22 +1121,23 @@ function DrawEffects.Install(BattleView, imgHandles)
                 end
 
             -- ==============================================================
-            -- 🔥 hydra_summon — 九头蛇召唤: 火焰光柱
+            -- 🔥 hydra_summon — 九头蛇召唤: 火焰爆发光环
             -- ==============================================================
             elseif eff.type == "hydra_summon" then
-                local rise = (1.0 - lifeRatio) * 50
-                local pillarW = 14 * lifeRatio
-                local grad = nvgLinearGradient(nvg, sx, sy - rise, sx, sy,
-                    nvgRGBA(255, 100, 0, 0), nvgRGBA(255, 140, 30, alpha))
+                local progress = 1.0 - lifeRatio
+                local expandR = 30 * math.min(1.0, progress * 3.0)
+                -- 扩散火焰环
+                local glow = nvgRadialGradient(nvg, sx, sy, expandR * 0.3, expandR,
+                    nvgRGBA(255, 140, 30, alpha), nvgRGBA(255, 80, 0, 0))
                 nvgBeginPath(nvg)
-                nvgRect(nvg, sx - pillarW / 2, sy - rise, pillarW, rise)
-                nvgFillPaint(nvg, grad)
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgFillPaint(nvg, glow)
                 nvgFill(nvg)
-                -- 底部光圈
+                -- 召唤环
                 nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, 18 * lifeRatio)
-                nvgStrokeColor(nvg, nvgRGBA(255, 160, 40, math.floor(alpha * 0.6)))
-                nvgStrokeWidth(nvg, 2)
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgStrokeColor(nvg, nvgRGBA(255, 180, 60, alpha))
+                nvgStrokeWidth(nvg, 2 * lifeRatio)
                 nvgStroke(nvg)
 
             -- ==============================================================
@@ -757,22 +1172,23 @@ function DrawEffects.Install(BattleView, imgHandles)
                 end
 
             -- ==============================================================
-            -- ⚡ lightning_spear — 闪电矛: 黄色光柱
+            -- ⚡ lightning_spear — 闪电矛: 电弧爆发光环
             -- ==============================================================
             elseif eff.type == "lightning_spear" then
-                local rise = (1.0 - lifeRatio) * 40
-                local pillarW = 10 * lifeRatio
-                local grad = nvgLinearGradient(nvg, sx, sy - rise, sx, sy,
-                    nvgRGBA(255, 240, 80, 0), nvgRGBA(255, 240, 120, alpha))
+                local progress = 1.0 - lifeRatio
+                local expandR = 25 * math.min(1.0, progress * 3.0)
+                -- 扩散电弧环
+                local glow = nvgRadialGradient(nvg, sx, sy, expandR * 0.2, expandR,
+                    nvgRGBA(255, 240, 100, alpha), nvgRGBA(255, 230, 60, 0))
                 nvgBeginPath(nvg)
-                nvgRect(nvg, sx - pillarW / 2, sy - rise, pillarW, rise)
-                nvgFillPaint(nvg, grad)
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgFillPaint(nvg, glow)
                 nvgFill(nvg)
-                -- 底部电弧
+                -- 电弧闪光
                 nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, 12 * lifeRatio)
-                nvgStrokeColor(nvg, nvgRGBA(255, 255, 180, math.floor(alpha * 0.7)))
-                nvgStrokeWidth(nvg, 2)
+                nvgCircle(nvg, sx, sy, expandR)
+                nvgStrokeColor(nvg, nvgRGBA(255, 255, 180, alpha))
+                nvgStrokeWidth(nvg, 2 * lifeRatio)
                 nvgStroke(nvg)
 
             -- ==============================================================
@@ -877,39 +1293,40 @@ function DrawEffects.Install(BattleView, imgHandles)
                 end
 
             -- ==============================================================
-            -- ⚡ thunderstorm — 雷暴: 持续闪电区域
+            -- ⚡ thunderstorm — 雷暴召唤: 中心劈一道大闪电 (图片)
             -- ==============================================================
             elseif eff.type == "thunderstorm" then
-                local r = eff.radius or 100
-                local time = bs.time or 0
-                -- 区域光晕
-                local pulse = 1.0 + math.sin(time * 6) * 0.08
-                local glow = nvgRadialGradient(nvg, sx, sy, r * 0.2 * pulse, r * pulse,
-                    nvgRGBA(255, 240, 80, math.floor(alpha * 0.3)),
-                    nvgRGBA(255, 200, 40, 0))
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, r * pulse)
-                nvgFillPaint(nvg, glow)
-                nvgFill(nvg)
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, r * pulse)
-                nvgStrokeColor(nvg, nvgRGBA(255, 240, 120, math.floor(alpha * 0.5)))
-                nvgStrokeWidth(nvg, 2 * lifeRatio)
-                nvgStroke(nvg)
-                -- 闪电劈落 (lod < 2)
-                if lod < 2 then
-                    local boltCount = lod == 0 and 3 or 1
-                    for bi = 1, boltCount do
-                        local seed = time * 5 + bi * 47
-                        local bx2 = sx + math.sin(seed) * r * 0.6
-                        nvgBeginPath(nvg)
-                        nvgMoveTo(nvg, bx2, sy - r * 0.8)
-                        nvgLineTo(nvg, bx2 + math.sin(seed * 3) * 10, sy - r * 0.4)
-                        nvgLineTo(nvg, bx2, sy)
-                        nvgStrokeColor(nvg, nvgRGBA(255, 255, 200, math.floor(alpha * 0.7)))
-                        nvgStrokeWidth(nvg, 2 * lifeRatio)
-                        nvgStroke(nvg)
-                    end
+                -- 延迟加载闪电柱图片
+                if not eff._boltImg then
+                    eff._boltImg = nvgCreateImage(nvg, "image/lightning_bolt_1_20260410155330.png", 0)
+                    if not eff._boltImg or eff._boltImg <= 0 then eff._boltImg = 0 end
+                end
+                if not eff._impactImg then
+                    eff._impactImg = nvgCreateImage(nvg, "image/lightning_ground_impact_20260410155131.png", 0)
+                    if not eff._impactImg or eff._impactImg <= 0 then eff._impactImg = 0 end
+                end
+                -- 中心一道大闪电柱
+                if eff._boltImg > 0 then
+                    local boltW = 48
+                    local boltHt = 160
+                    local imgPaint = nvgImagePattern(nvg,
+                        sx - boltW / 2, sy - boltHt,
+                        boltW, boltHt, 0, eff._boltImg, alpha)
+                    nvgBeginPath(nvg)
+                    nvgRect(nvg, sx - boltW / 2, sy - boltHt, boltW, boltHt)
+                    nvgFillPaint(nvg, imgPaint)
+                    nvgFill(nvg)
+                end
+                -- 地面冲击标记
+                if eff._impactImg > 0 then
+                    local impSz = 40
+                    local ip = nvgImagePattern(nvg,
+                        sx - impSz / 2, sy - impSz / 2,
+                        impSz, impSz, 0, eff._impactImg, alpha)
+                    nvgBeginPath(nvg)
+                    nvgRect(nvg, sx - impSz / 2, sy - impSz / 2, impSz, impSz)
+                    nvgFillPaint(nvg, ip)
+                    nvgFill(nvg)
                 end
 
             -- ==============================================================
@@ -942,7 +1359,7 @@ function DrawEffects.Install(BattleView, imgHandles)
                 end
 
             -- ==============================================================
-            -- 🔥 meteor — 巨型陨石: 全屏橙红冲击
+            -- 🔥 meteor — 陨石坠落: 图片下落 + 爆炸冲击波
             -- ==============================================================
             elseif eff.type == "meteor" then
                 local aw = eff.areaW or l.w
@@ -950,68 +1367,124 @@ function DrawEffects.Install(BattleView, imgHandles)
                 local cx = l.x + aw * 0.5
                 local cy = l.y + ah * 0.5
                 local progress = 1.0 - lifeRatio
-                local flashA = math.floor(120 * lifeRatio * (progress < 0.3 and (progress / 0.3) or 1.0))
-                nvgBeginPath(nvg)
-                nvgRect(nvg, l.x, l.y, aw, ah)
-                nvgFillColor(nvg, nvgRGBA(255, 60, 0, flashA))
-                nvgFill(nvg)
-                local shockR = math.max(aw, ah) * 0.5 * math.min(1.0, progress * 2.0)
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, cx, cy, shockR)
-                nvgStrokeColor(nvg, nvgRGBA(255, 200, 60, math.floor(alpha * 0.8)))
-                nvgStrokeWidth(nvg, 4 * lifeRatio)
-                nvgStroke(nvg)
-                if lod < 2 then
-                    local coreGlow = nvgRadialGradient(nvg, cx, cy, 0, shockR * 0.4,
-                        nvgRGBA(255, 240, 150, math.floor(alpha * 0.6)),
-                        nvgRGBA(255, 100, 0, 0))
-                    nvgBeginPath(nvg)
-                    nvgCircle(nvg, cx, cy, shockR * 0.4)
-                    nvgFillPaint(nvg, coreGlow)
-                    nvgFill(nvg)
-                end
+                local impactT = 0.4 -- 前40%为下落阶段, 后60%为爆炸阶段
 
-            -- ==============================================================
-            -- ❄️ deep_freeze — 深度冻结: 全屏冰蓝冻结爆发
-            -- ==============================================================
-            elseif eff.type == "deep_freeze" then
-                local aw = eff.areaW or l.w
-                local ah = eff.areaH or l.h
-                local cx = l.x + aw * 0.5
-                local cy = l.y + ah * 0.5
-                local progress = 1.0 - lifeRatio
-                local flashA = math.floor(100 * lifeRatio)
-                nvgBeginPath(nvg)
-                nvgRect(nvg, l.x, l.y, aw, ah)
-                nvgFillColor(nvg, nvgRGBA(60, 160, 255, flashA))
-                nvgFill(nvg)
-                local frostR = math.max(aw, ah) * 0.5 * math.min(1.0, progress * 1.8)
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, cx, cy, frostR)
-                nvgStrokeColor(nvg, nvgRGBA(140, 220, 255, math.floor(alpha * 0.8)))
-                nvgStrokeWidth(nvg, 3 * lifeRatio)
-                nvgStroke(nvg)
-                if lod < 2 then
-                    local shardCount = lod == 0 and 8 or 4
-                    for si = 1, shardCount do
-                        local angle = si * (math.pi * 2 / shardCount) + progress * 2
-                        local sr = frostR * 0.7
-                        local shx = cx + math.cos(angle) * sr
-                        local shy = cy + math.sin(angle) * sr
+                if progress < impactT then
+                    -- === 下落阶段: 陨石从上方落下 ===
+                    local fallRatio = progress / impactT
+                    local meteorSize = 60 + fallRatio * 20
+                    -- 从画面上方偏右落向中心
+                    local startX = cx + aw * 0.15
+                    local startY = l.y - 40
+                    local mx = startX + (cx - startX) * fallRatio
+                    local my = startY + (cy - startY) * fallRatio
+                    -- 旋转
+                    local rot = fallRatio * 3.0
+                    -- 延迟加载陨石图片
+                    if not eff._meteorImg then
+                        eff._meteorImg = nvgCreateImage(nvg, "image/meteor_rock_20260410152202.png", 0)
+                        if not eff._meteorImg or eff._meteorImg <= 0 then eff._meteorImg = 0 end
+                    end
+                    if eff._meteorImg > 0 then
                         nvgSave(nvg)
-                        nvgTranslate(nvg, shx, shy)
-                        nvgRotate(nvg, angle)
+                        nvgTranslate(nvg, mx, my)
+                        nvgRotate(nvg, rot)
+                        local pat = nvgImagePattern(nvg, -meteorSize/2, -meteorSize/2, meteorSize, meteorSize, 0, eff._meteorImg, 1.0)
                         nvgBeginPath(nvg)
-                        nvgMoveTo(nvg, 0, -5)
-                        nvgLineTo(nvg, 3, 0)
-                        nvgLineTo(nvg, 0, 5)
-                        nvgLineTo(nvg, -3, 0)
-                        nvgClosePath(nvg)
-                        nvgFillColor(nvg, nvgRGBA(180, 230, 255, math.floor(alpha * 0.7)))
+                        nvgRect(nvg, -meteorSize/2, -meteorSize/2, meteorSize, meteorSize)
+                        nvgFillPaint(nvg, pat)
                         nvgFill(nvg)
                         nvgRestore(nvg)
                     end
+                    -- 拖尾火焰
+                    if lod < 2 then
+                        local tailLen = 40 * fallRatio
+                        local dx = (cx - startX)
+                        local dy = (cy - startY)
+                        local d = math.sqrt(dx * dx + dy * dy)
+                        if d > 0 then
+                            local nx, ny = -dx / d, -dy / d
+                            local grad = nvgLinearGradient(nvg, mx, my,
+                                mx + nx * tailLen, my + ny * tailLen,
+                                nvgRGBA(255, 160, 40, math.floor(200 * fallRatio)),
+                                nvgRGBA(255, 80, 0, 0))
+                            nvgBeginPath(nvg)
+                            nvgMoveTo(nvg, mx - 8, my)
+                            nvgLineTo(nvg, mx + nx * tailLen, my + ny * tailLen)
+                            nvgLineTo(nvg, mx + 8, my)
+                            nvgClosePath(nvg)
+                            nvgFillPaint(nvg, grad)
+                            nvgFill(nvg)
+                        end
+                    end
+                else
+                    -- === 爆炸阶段: 冲击波扩散 ===
+                    local explodeRatio = (progress - impactT) / (1.0 - impactT)
+                    local shockR = math.max(aw, ah) * 0.5 * explodeRatio
+                    local explodeAlpha = math.floor(200 * (1.0 - explodeRatio))
+                    -- 全屏闪光 (快速衰减)
+                    if explodeRatio < 0.3 then
+                        local flashA = math.floor(100 * (1.0 - explodeRatio / 0.3))
+                        nvgBeginPath(nvg)
+                        nvgRect(nvg, l.x, l.y, aw, ah)
+                        nvgFillColor(nvg, nvgRGBA(255, 100, 20, flashA))
+                        nvgFill(nvg)
+                    end
+                    -- 冲击波环
+                    nvgBeginPath(nvg)
+                    nvgCircle(nvg, cx, cy, shockR)
+                    nvgStrokeColor(nvg, nvgRGBA(255, 200, 60, explodeAlpha))
+                    nvgStrokeWidth(nvg, 4 * (1.0 - explodeRatio))
+                    nvgStroke(nvg)
+                    -- 核心火焰
+                    if lod < 2 then
+                        local coreR = shockR * 0.3 * (1.0 - explodeRatio)
+                        local coreGlow = nvgRadialGradient(nvg, cx, cy, 0, coreR,
+                            nvgRGBA(255, 240, 150, explodeAlpha),
+                            nvgRGBA(255, 100, 0, 0))
+                        nvgBeginPath(nvg)
+                        nvgCircle(nvg, cx, cy, coreR)
+                        nvgFillPaint(nvg, coreGlow)
+                        nvgFill(nvg)
+                    end
                 end
+
+            -- ==============================================================
+            -- ❄️ deep_freeze — 深度冻结: 玩家身上冰壳护盾
+            -- ==============================================================
+            elseif eff.type == "deep_freeze" then
+                -- 在玩家位置绘制冰壳 (使用 bs.playerBattle 获取位置)
+                local p = bs.playerBattle
+                local px = p and (l.x + p.x) or (l.x + (eff.areaW or l.w) * 0.5)
+                local py = p and (l.y + p.y) or (l.y + (eff.areaH or l.h) * 0.5)
+                local progress = 1.0 - lifeRatio
+                local shieldSize = 70
+                local pulse = 0.95 + math.sin((bs.time or 0) * 3) * 0.05
+
+                -- 延迟加载冰盾图片
+                if not eff._freezeImg then
+                    eff._freezeImg = nvgCreateImage(nvg, "image/deep_freeze_shield_20260410152400.png", 0)
+                    if not eff._freezeImg or eff._freezeImg <= 0 then eff._freezeImg = 0 end
+                end
+                -- 冰壳图片 (覆盖在玩家身上)
+                if eff._freezeImg and eff._freezeImg > 0 then
+                    local sz = shieldSize * pulse
+                    local imgAlpha = math.min(1.0, progress * 4.0) * lifeRatio
+                    local pat = nvgImagePattern(nvg, px - sz/2, py - sz/2, sz, sz, 0, eff._freezeImg, imgAlpha)
+                    nvgBeginPath(nvg)
+                    nvgRect(nvg, px - sz/2, py - sz/2, sz, sz)
+                    nvgFillPaint(nvg, pat)
+                    nvgFill(nvg)
+                end
+                -- 冰霜光晕
+                local glowR = shieldSize * 0.5 * pulse
+                local iceGlow = nvgRadialGradient(nvg, px, py, glowR * 0.3, glowR,
+                    nvgRGBA(120, 200, 255, math.floor(60 * lifeRatio)),
+                    nvgRGBA(80, 180, 255, 0))
+                nvgBeginPath(nvg)
+                nvgCircle(nvg, px, py, glowR)
+                nvgFillPaint(nvg, iceGlow)
+                nvgFill(nvg)
 
             -- ==============================================================
             -- ❄️ deep_freeze_burst — 深度冻结结束爆炸: 冰蓝冲击波
@@ -1069,37 +1542,65 @@ function DrawEffects.Install(BattleView, imgHandles)
                 local cx = l.x + aw * 0.5
                 local cy = l.y + ah * 0.5
                 local time = bs.time or 0
-                local progress = 1.0 - lifeRatio
-                -- 全屏闪黄
-                local flashA = math.floor(80 * lifeRatio * (0.5 + math.sin(time * 15) * 0.5))
+
+                -- 延迟加载闪电图片 (复用全局路径常量)
+                if not eff._boltImgs then
+                    eff._boltImgs = {}
+                    local paths = {
+                        "image/lightning_bolt_1_20260410155330.png",
+                        "image/lightning_bolt_2_20260410155116.png",
+                        "image/lightning_bolt_3_20260410155117.png",
+                    }
+                    for i, p in ipairs(paths) do
+                        eff._boltImgs[i] = nvgCreateImage(nvg, p, 0)
+                    end
+                end
+                if not eff._impactImg then
+                    eff._impactImg = nvgCreateImage(nvg, "image/lightning_ground_impact_20260410155131.png", 0)
+                end
+
+                -- 全屏闪黄（保留，快速闪烁表示风暴降临）
+                local flashA = math.floor(60 * lifeRatio * (0.5 + math.sin(time * 15) * 0.5))
                 nvgBeginPath(nvg)
                 nvgRect(nvg, l.x, l.y, aw, ah)
                 nvgFillColor(nvg, nvgRGBA(255, 240, 80, flashA))
                 nvgFill(nvg)
-                -- 闪电劈落 (LOD: 5→3→1)
-                local boltCount = lod == 0 and 5 or (lod == 1 and 3 or 1)
+
+                -- 多道闪电柱图片劈落
+                local boltCount = lod == 0 and 6 or (lod == 1 and 4 or 2)
                 for bi = 1, boltCount do
-                    local seed = time * 4 + bi * 61.7
-                    local bx2 = l.x + (math.sin(seed) * 0.5 + 0.5) * aw
-                    local topY = l.y
-                    local botY = l.y + ah
-                    local midX = bx2 + math.sin(seed * 3) * 20
-                    local midY = l.y + ah * 0.5 + math.cos(seed * 2) * ah * 0.2
-                    nvgBeginPath(nvg)
-                    nvgMoveTo(nvg, bx2, topY)
-                    nvgLineTo(nvg, midX, midY)
-                    nvgLineTo(nvg, bx2 + math.cos(seed * 5) * 15, botY)
-                    nvgStrokeColor(nvg, nvgRGBA(255, 255, 180, math.floor(alpha * 0.8)))
-                    nvgStrokeWidth(nvg, 3 * lifeRatio)
-                    nvgStroke(nvg)
+                    local seed = time * 3.5 + bi * 61.7
+                    local bx = l.x + (math.sin(seed) * 0.5 + 0.5) * aw
+                    local by = l.y + (math.cos(seed * 1.3 + 5) * 0.3 + 0.6) * ah
+                    local variant = (bi % 3) + 1
+                    local boltH = eff._boltImgs[variant]
+                    local flicker = 0.6 + math.sin(seed * 7) * 0.4
+                    local boltAlpha = lifeRatio * flicker
+
+                    if boltH and boltH > 0 and boltAlpha > 0.02 then
+                        local boltW = 52
+                        local boltHt = 160
+                        local imgPaint = nvgImagePattern(nvg,
+                            bx - boltW / 2, by - boltHt,
+                            boltW, boltHt, 0, boltH, boltAlpha)
+                        nvgBeginPath(nvg)
+                        nvgRect(nvg, bx - boltW / 2, by - boltHt, boltW, boltHt)
+                        nvgFillPaint(nvg, imgPaint)
+                        nvgFill(nvg)
+                    end
+
+                    -- 地面电击
+                    if eff._impactImg and eff._impactImg > 0 then
+                        local impactSize = 40
+                        local ip = nvgImagePattern(nvg,
+                            bx - impactSize / 2, by - impactSize / 2,
+                            impactSize, impactSize, 0, eff._impactImg, boltAlpha * 0.85)
+                        nvgBeginPath(nvg)
+                        nvgRect(nvg, bx - impactSize / 2, by - impactSize / 2, impactSize, impactSize)
+                        nvgFillPaint(nvg, ip)
+                        nvgFill(nvg)
+                    end
                 end
-                -- 冲击波环
-                local shockR = math.max(aw, ah) * 0.4 * math.min(1.0, progress * 2.0)
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, cx, cy, shockR)
-                nvgStrokeColor(nvg, nvgRGBA(255, 240, 120, math.floor(alpha * 0.6)))
-                nvgStrokeWidth(nvg, 3 * lifeRatio)
-                nvgStroke(nvg)
 
             end
         end

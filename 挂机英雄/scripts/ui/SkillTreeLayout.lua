@@ -152,73 +152,125 @@ function Layout.Build()
         local branch = BRANCH_ASSIGN[sk.id] or 0
         local sideDir = branch ~= 0 and branch or -1
 
-        -- 第一遍: 放置根增强节点 (无 requires 的 line)
-        local rootNodes = {}   -- [enhId] = true, 根增强节点集合
-        local rootCount = 0
+        -- 收集所有增强节点，按 line 分类
+        local rootLines = {}     -- 无 requires 的 line: { {line, lineIdx}, ... }
+        local childLines = {}    -- 有 requires 的 line: { {line, lineIdx, requires}, ... }
         for lineIdx, line in ipairs(sk.enhances) do
-            if not line.requires then
-                for nodeIdx, enh in ipairs(line) do
-                    rootNodes[enh.id] = true
-                    rootCount = rootCount + 1
+            if line.requires then
+                childLines[#childLines + 1] = { line = line, lineIdx = lineIdx, requires = line.requires }
+            else
+                rootLines[#rootLines + 1] = { line = line, lineIdx = lineIdx }
+            end
+        end
+
+        -- 检测"隐式Y形": 无 requires 但结构为 [1个节点line] + [2个节点line]
+        -- 此时把单节点 line 作为Y根，双节点 line 的2个节点作为Y分叉子节点
+        local implicitYRoot = nil       -- 单节点 line 的那个节点
+        local implicitYChildren = nil   -- 双节点 line 的2个节点
+        if #rootLines >= 2 and #childLines == 0 then
+            local singleLine, multiLine = nil, nil
+            for _, rl in ipairs(rootLines) do
+                if #rl.line == 1 and not singleLine then
+                    singleLine = rl
+                elseif #rl.line >= 2 and not multiLine then
+                    multiLine = rl
+                end
+            end
+            if singleLine and multiLine then
+                implicitYRoot = { enh = singleLine.line[1], lineIdx = singleLine.lineIdx, nodeIdx = 1 }
+                implicitYChildren = {}
+                for ni, enh in ipairs(multiLine.line) do
+                    implicitYChildren[#implicitYChildren + 1] = {
+                        enh = enh, lineIdx = multiLine.lineIdx, nodeIdx = ni,
+                    }
                 end
             end
         end
 
-        -- 根节点纵向排列在父技能侧边
-        local rootIdx = 0
-        local rootStartY = -(rootCount - 1) * (ENH_SIZE + 4) * 0.5
-        for lineIdx, line in ipairs(sk.enhances) do
-            if not line.requires then
-                for nodeIdx, enh in ipairs(line) do
+        if implicitYRoot then
+            -- 隐式Y形布局: 根节点 + 2个子节点Y分叉
+            local rootEnh = implicitYRoot
+            local ex = parentPos.x + sideDir * ENH_BRANCH_X
+            local ey = parentPos.y
+            enhNodes[rootEnh.enh.id] = {
+                x = ex, y = ey,
+                parentId = sk.id,
+                lineIdx = rootEnh.lineIdx,
+                nodeIdx = rootEnh.nodeIdx,
+                enh = rootEnh.enh,
+                isImplicitYRoot = true,
+            }
+            -- 子节点Y形分叉
+            local childCount = #implicitYChildren
+            local spreadStartY = -(childCount - 1) * ENH_CHILD_Y * 0.5
+            for ci, info in ipairs(implicitYChildren) do
+                local cex = ex + sideDir * ENH_CHILD_X
+                local cey = ey + spreadStartY + (ci - 1) * ENH_CHILD_Y
+                enhNodes[info.enh.id] = {
+                    x = cex, y = cey,
+                    parentId = sk.id,
+                    lineIdx = info.lineIdx,
+                    nodeIdx = info.nodeIdx,
+                    enh = info.enh,
+                    implicitYParent = rootEnh.enh.id,
+                }
+            end
+        else
+            -- 标准布局: 根节点纵向排列
+            local rootCount = 0
+            for _, rl in ipairs(rootLines) do
+                rootCount = rootCount + #rl.line
+            end
+
+            local rootIdx = 0
+            local rootStartY = -(rootCount - 1) * (ENH_SIZE + 4) * 0.5
+            for _, rl in ipairs(rootLines) do
+                for nodeIdx, enh in ipairs(rl.line) do
                     rootIdx = rootIdx + 1
                     local ex = parentPos.x + sideDir * ENH_BRANCH_X
                     local ey = parentPos.y + rootStartY + (rootIdx - 1) * (ENH_SIZE + 4)
                     enhNodes[enh.id] = {
                         x = ex, y = ey,
                         parentId = sk.id,
-                        lineIdx = lineIdx,
+                        lineIdx = rl.lineIdx,
                         nodeIdx = nodeIdx,
                         enh = enh,
                     }
                 end
             end
-        end
 
-        -- 第二遍: 放置子增强节点 (有 requires 的 line, 从前置节点 Y 形分叉)
-        -- 先按 requires 分组
-        local childrenOf = {}  -- [reqId] = { {line, lineIdx, nodeIdx, enh}, ... }
-        for lineIdx, line in ipairs(sk.enhances) do
-            if line.requires then
-                local reqId = line.requires
+            -- 显式 requires 的子节点Y形分叉
+            local childrenOf = {}
+            for _, cl in ipairs(childLines) do
+                local reqId = cl.requires
                 if not childrenOf[reqId] then childrenOf[reqId] = {} end
-                for nodeIdx, enh in ipairs(line) do
+                for nodeIdx, enh in ipairs(cl.line) do
                     childrenOf[reqId][#childrenOf[reqId] + 1] = {
                         enh = enh,
-                        lineIdx = lineIdx,
+                        lineIdx = cl.lineIdx,
                         nodeIdx = nodeIdx,
                     }
                 end
             end
-        end
 
-        -- 从前置节点位置做 Y 形分叉
-        for reqId, children in pairs(childrenOf) do
-            local reqPos = enhNodes[reqId]
-            if not reqPos then goto continue_req end
-            local childCount = #children
-            local spreadStartY = -(childCount - 1) * ENH_CHILD_Y * 0.5
-            for ci, info in ipairs(children) do
-                local ex = reqPos.x + sideDir * ENH_CHILD_X
-                local ey = reqPos.y + spreadStartY + (ci - 1) * ENH_CHILD_Y
-                enhNodes[info.enh.id] = {
-                    x = ex, y = ey,
-                    parentId = sk.id,
-                    lineIdx = info.lineIdx,
-                    nodeIdx = info.nodeIdx,
-                    enh = info.enh,
-                }
+            for reqId, children in pairs(childrenOf) do
+                local reqPos = enhNodes[reqId]
+                if not reqPos then goto continue_req end
+                local childCount = #children
+                local spreadStartY = -(childCount - 1) * ENH_CHILD_Y * 0.5
+                for ci, info in ipairs(children) do
+                    local ex = reqPos.x + sideDir * ENH_CHILD_X
+                    local ey = reqPos.y + spreadStartY + (ci - 1) * ENH_CHILD_Y
+                    enhNodes[info.enh.id] = {
+                        x = ex, y = ey,
+                        parentId = sk.id,
+                        lineIdx = info.lineIdx,
+                        nodeIdx = info.nodeIdx,
+                        enh = info.enh,
+                    }
+                end
+                ::continue_req::
             end
-            ::continue_req::
         end
 
         ::continue_skill::

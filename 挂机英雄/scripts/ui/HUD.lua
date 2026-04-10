@@ -18,7 +18,7 @@ function HUD.Create()
         backgroundColor = { 25, 30, 42, 240 },
         borderBottomWidth = 1, borderBottomColor = { 50, 60, 80, 100 },
         children = {
-            -- 左侧: 等级 + DPS + 战力
+            -- 左侧: 等级 + DPS + IP
             UI.Panel {
                 flexDirection = "row", alignItems = "center",
                 paddingLeft = 12, gap = 8,
@@ -34,7 +34,7 @@ function HUD.Create()
                     UI.Panel {
                         flexDirection = "row", alignItems = "center", gap = 2,
                         children = {
-                            UI.Label { text = "战力", fontSize = 9, fontColor = { 160, 130, 60, 200 } },
+                            UI.Label { text = "IP", fontSize = 9, fontColor = { 160, 130, 60, 200 } },
                             UI.Label { id = "hud_power", text = "0", fontSize = 12, fontColor = { 255, 215, 0, 230 } },
                         }
                     },

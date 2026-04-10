@@ -21,6 +21,7 @@ function SkillCaster._Cast_frost_bolt(bs, skillCfg, lv, p)
     local target = H.FindNearestEnemy(bs.enemies, p.x, p.y, range)
 
     if target then
+        CombatUtils.PlaySfx("frostBolt", 0.5)
         local bonuses = {}
         local dmg, isCrit = H.HitEnemySkill(bs, target, dmgScale, element, bonuses, p.x, p.y, CombatUtils.KNOCKBACK_SKILL)
         if not target.dead then
@@ -221,6 +222,7 @@ function SkillCaster._Cast_ice_armor(bs, skillCfg, lv, p)
         GameState.iceArmorManaSpent = 0
     end
 
+    CombatUtils.PlaySfx("iceArmor", 0.6)
     CombatUtils.TriggerShake(bs, CombatUtils.SHAKE_SKILL)
     table.insert(bs.skillEffects, {
         type = "ice_armor", x = p.x, y = p.y,
@@ -254,8 +256,13 @@ function SkillCaster._Cast_frost_nova(bs, skillCfg, lv, p)
         end
     end
 
+    -- 闪光冰霜新星: 释放后获得20%移动速度4秒
+    if H.HasEnhance("frost_nova_shimmering") then
+        GameState._frostNovaSpeedTimer = 4.0
+    end
+
     CombatUtils.TriggerShake(bs, CombatUtils.SHAKE_BLAST)
-    CombatUtils.PlaySfx("frostWarn", 0.6)
+    CombatUtils.PlaySfx("frostNova", 0.6)
     table.insert(bs.skillEffects, {
         type = "frost_nova", x = p.x, y = p.y,
         radius = radius, life = 0.6, maxLife = 0.6,
@@ -347,18 +354,26 @@ function SkillCaster._Cast_frozen_orb(bs, skillCfg, lv, p)
         end
     end
 
+    -- 强化冰封球: 移速+30% (3秒)
+    local hasOrbEnhanced = H.HasEnhance("frozen_orb_enhanced")
+    if hasOrbEnhanced then
+        GameState._frozenOrbSpeedTimer = 3.0
+    end
+
     if H.HasEnhance("frozen_orb_greater") then
+        -- 强化冰封球: greater 区域持续时间+1秒
+        local zoneDur = hasOrbEnhanced and 5.0 or 4.0
         table.insert(bs.fireZones, {
             x = bestX, y = bestY,
             radius = radius,
-            duration = 4.0, maxDuration = 4.0,
+            duration = zoneDur, maxDuration = zoneDur,
             dmgPct = 0.15, tickRate = 0.5, tickCD = 0,
             element = "ice", source = "frozen_orb_greater",
         })
     end
 
     CombatUtils.TriggerShake(bs, CombatUtils.SHAKE_BLAST)
-    CombatUtils.PlaySfx("frostImpact", 0.7)
+    CombatUtils.PlaySfx("frozenOrb", 0.7)
     table.insert(bs.skillEffects, {
         type = "frozen_orb", x = bestX, y = bestY,
         radius = radius, life = 0.8, maxLife = 0.8,
@@ -375,6 +390,14 @@ function SkillCaster._Cast_deep_freeze(bs, skillCfg, lv, p)
     local burstPct   = skillCfg.effect(lv) / 100        -- 结束爆炸伤害%
     local fbPerSec   = skillCfg.frostbitePctPerSec       -- 冻伤%/秒 (常量)
     local tickRate   = skillCfg.tickRate or 1.0
+
+    -- 至尊深度冻结: 免疫期间每2秒回复10法力 (标记, BuffRuntime 执行)
+    if H.HasEnhance("deep_freeze_supreme") then
+        GameState._deepFreezeSupreme = true
+        GameState._deepFreezeManaTick = 0
+    else
+        GameState._deepFreezeSupreme = false
+    end
 
     -- 1) 激活 CC 免疫 (BuffRuntime 管理计时)
     GameState.ActivateDeepFreeze(duration, burstPct, radius, bs)

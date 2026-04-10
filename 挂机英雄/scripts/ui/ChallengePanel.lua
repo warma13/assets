@@ -6,6 +6,7 @@ local UI = require("urhox-libs/UI")
 local EndlessTrialPanel = require("ui.EndlessTrialPanel")
 local WorldBossPanel = require("ui.WorldBossPanel")
 local ResourceDungeonPanel = require("ui.ResourceDungeonPanel")
+local SetDungeonPanel = require("ui.SetDungeonPanel")
 
 local ChallengePanel = {}
 
@@ -16,7 +17,7 @@ local overlayRoot_ = nil
 ---@type Widget
 local contentArea_ = nil
 
-local activeTab_ = "trial"  -- "trial" | "boss" | "mine"
+local activeTab_ = "trial"  -- "trial" | "boss" | "mine" | "set"
 
 -- ============================================================================
 -- 公开接口
@@ -43,6 +44,10 @@ end
 
 function ChallengePanel.SetMineStartCallback(fn)
     ResourceDungeonPanel.SetStartCallback(fn)
+end
+
+function ChallengePanel.SetSetDungeonStartCallback(fn)
+    SetDungeonPanel.SetStartCallback(fn)
 end
 
 function ChallengePanel.IsOpen()
@@ -127,6 +132,7 @@ function ChallengePanel.Build()
             tabBtn("无尽试炼", "trial"),
             tabBtn("世界Boss", "boss"),
             tabBtn("折光矿脉", "mine"),
+            -- tabBtn("套装秘境", "set"),  -- 暂时隐藏，后续完善
             UI.Panel { flexGrow = 1 },  -- 右侧弹性占位
             -- 关闭按钮
             UI.Panel {
@@ -154,6 +160,8 @@ function ChallengePanel.Build()
         WorldBossPanel.BuildContent(contentArea_, closeFn)
     elseif activeTab_ == "mine" then
         ResourceDungeonPanel.BuildContent(contentArea_, closeFn)
+    elseif activeTab_ == "set" then
+        SetDungeonPanel.BuildContent(contentArea_, closeFn)
     end
 
     overlay_ = UI.Panel {

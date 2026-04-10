@@ -57,6 +57,21 @@ function H.GetAliveEnemies(enemies)
     return alive
 end
 
+--- 收集指定范围内的存活敌人
+function H.GetAliveEnemiesInRange(enemies, px, py, range)
+    local alive = {}
+    local r2 = range * range
+    for _, e in ipairs(enemies) do
+        if not e.dead then
+            local dx, dy = e.x - px, e.y - py
+            if dx * dx + dy * dy <= r2 then
+                alive[#alive + 1] = e
+            end
+        end
+    end
+    return alive
+end
+
 --- 统一的 "命中单个敌人" 管线 (技能用)
 --- @return number finalDmg
 function H.HitEnemySkill(bs, e, multiplier, element, extraBonuses, px, py, kbMul, xSources)
@@ -77,6 +92,11 @@ function H.HitEnemySkill(bs, e, multiplier, element, extraBonuses, px, py, kbMul
 
     if kbMul and kbMul > 0 then
         CombatUtils.ApplyKnockback(e, px or bs.areaW * 0.5, py or e.y, kbMul)
+    end
+
+    -- 关键被动: 过载 — 技能暴击生成1个爆裂电花
+    if isCrit and GameState.GetSkillLevel("kp_overcharge") > 0 then
+        GameState._cracklingEnergyCount = (GameState._cracklingEnergyCount or 0) + 1
     end
 
     local color = Config.ELEMENTS.colors[element] or { 255, 255, 255 }

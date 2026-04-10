@@ -208,28 +208,39 @@ function InventoryCompare.Install(Parent, shared)
             children = nameRow,
         })
 
-        local power = GameState.ItemPower(item)
-        local powerText = "战力 " .. power
-        if powerArrow then powerText = powerText .. " " .. powerArrow end
-        local powerColor = powerArrow == "↑" and { 80, 255, 80, 230 } or { 130, 130, 130, 160 }
-        table.insert(textChildren, UI.Label { text = powerText, fontSize = 10, fontColor = powerColor })
+        local ip = item.itemPower or 0
+        local ipText = "IP " .. ip
+        if powerArrow then ipText = ipText .. " " .. powerArrow end
+        local ipColor = powerArrow == "↑" and { 80, 255, 80, 230 } or { 130, 130, 130, 160 }
+        table.insert(textChildren, UI.Label { text = ipText, fontSize = 10, fontColor = ipColor })
 
-        local qualityText = (item.qualityName or "") .. "  IP " .. (item.itemPower or 0)
+        local qualityText = item.qualityName or ""
         table.insert(textChildren, UI.Label { text = qualityText, fontSize = 8, fontColor = { c[1], c[2], c[3], 140 }, marginTop = 1 })
+
+        -- 主属性 (固有, 金色高亮)
+        if item.mainStatId and item.mainStatValue then
+            local msDef = Config.AFFIX_POOL_MAP[item.mainStatId] or Config.EQUIP_STATS[item.mainStatId]
+            local msName = msDef and msDef.name or item.mainStatId
+            local msVal = GameState.FormatStatValue(item.mainStatId, item.mainStatValue)
+            table.insert(textChildren, UI.Label {
+                text = "◆ " .. msName .. " " .. msVal .. " [主属性]",
+                fontSize = 9, fontColor = { 255, 220, 80, 240 },
+            })
+        end
 
         -- 统一词缀（桶分类颜色 + 标签）
         if item.affixes and #item.affixes > 0 then
             for _, aff in ipairs(item.affixes) do
                 local def = Config.AFFIX_POOL_MAP[aff.id] or Config.EQUIP_STATS[aff.id]
                 if def then
-                    local bucketColor = def.bucket and Config.AFFIX_BUCKET_COLORS[def.bucket]
-                    local catColor = bucketColor or (def.category and Config.AFFIX_CATEGORY_COLORS[def.category]) or { 190, 195, 200 }
                     local prefix = aff.greater and "★ " or ""
-                    local fc = aff.greater and Config.AFFIX_ENHANCED_COLOR or catColor
+                    local fc = (def.category and Config.AFFIX_CATEGORY_COLORS[def.category]) or { 190, 195, 200 }
                     local valStr = GameState.FormatStatValue(aff.id, aff.value)
                     local bucketTag = def.bucket and Config.AFFIX_BUCKET_LABELS[def.bucket] or ""
                     local label = prefix .. (def.name or aff.id) .. " " .. valStr
                     if bucketTag ~= "" then label = label .. " " .. bucketTag end
+                    local mc = aff.milestoneCount or 0
+                    if mc > 0 then label = label .. " (+" .. (mc * 2) .. "%)" end
                     table.insert(textChildren, UI.Label {
                         text = label,
                         fontSize = 9, fontColor = { fc[1], fc[2], fc[3], 210 },
@@ -409,13 +420,12 @@ function InventoryCompare.Install(Parent, shared)
             children = nameRow,
         })
 
-        local power = GameState.ItemPower(item)
-        local detailQuality = (item.qualityName or "") .. "  IP " .. (item.itemPower or 0)
+        local ip = item.itemPower or 0
         table.insert(headerLeftChildren, UI.Panel {
             flexDirection = "row", alignItems = "center", gap = 8, marginTop = 2,
             children = {
-                UI.Label { text = "战力 " .. power, fontSize = 10, fontColor = { 180, 190, 210, 220 } },
-                UI.Label { text = detailQuality, fontSize = 9, fontColor = { c[1], c[2], c[3], 180 } },
+                UI.Label { text = "IP " .. ip, fontSize = 10, fontColor = { 255, 215, 0, 230 } },
+                UI.Label { text = item.qualityName or "", fontSize = 9, fontColor = { c[1], c[2], c[3], 180 } },
             },
         })
 
@@ -585,21 +595,32 @@ function InventoryCompare.Install(Parent, shared)
 
         table.insert(children, UI.Panel { width = "100%", height = 1, backgroundColor = { 60, 70, 90, 120 }, marginTop = 4, marginBottom = 2 })
 
-        -- ==== 左列: 统一词缀  |  右列: 宝石属性 ====
+        -- ==== 左列: 主属性 + 统一词缀  |  右列: 宝石属性 ====
         local leftColChildren = {}
+
+        -- 主属性 (固有, 金色高亮)
+        if item.mainStatId and item.mainStatValue then
+            local msDef = Config.AFFIX_POOL_MAP[item.mainStatId] or Config.EQUIP_STATS[item.mainStatId]
+            local msName = msDef and msDef.name or item.mainStatId
+            local msVal = GameState.FormatStatValue(item.mainStatId, item.mainStatValue)
+            table.insert(leftColChildren, UI.Label {
+                text = "◆ " .. msName .. " " .. msVal .. " [主属性]",
+                fontSize = 9, fontColor = { 255, 220, 80, 240 },
+            })
+        end
 
         if item.affixes and #item.affixes > 0 then
             for _, aff in ipairs(item.affixes) do
                 local def = Config.AFFIX_POOL_MAP[aff.id] or Config.EQUIP_STATS[aff.id]
                 if def then
-                    local bucketColor = def.bucket and Config.AFFIX_BUCKET_COLORS[def.bucket]
-                    local catColor = bucketColor or (def.category and Config.AFFIX_CATEGORY_COLORS[def.category]) or { 190, 195, 200 }
                     local prefix = aff.greater and "★ " or ""
-                    local fc = aff.greater and Config.AFFIX_ENHANCED_COLOR or catColor
+                    local fc = (def.category and Config.AFFIX_CATEGORY_COLORS[def.category]) or { 190, 195, 200 }
                     local valStr = GameState.FormatStatValue(aff.id, aff.value)
                     local bucketTag = def.bucket and Config.AFFIX_BUCKET_LABELS[def.bucket] or ""
                     local label = prefix .. (def.name or aff.id) .. " " .. valStr
                     if bucketTag ~= "" then label = label .. " " .. bucketTag end
+                    local mc = aff.milestoneCount or 0
+                    if mc > 0 then label = label .. " (+" .. (mc * 2) .. "%)" end
                     table.insert(leftColChildren, UI.Label {
                         text = label,
                         fontSize = 9, fontColor = { fc[1], fc[2], fc[3], 210 },
@@ -904,15 +925,15 @@ function InventoryCompare.Install(Parent, shared)
         -- ================================================================
         -- 背包装备 → 对比面板（原有逻辑）
         -- ================================================================
-        local equippedPower = GameState.ItemPower(equipped)
-        local newPower = newItem and GameState.ItemPower(newItem) or 0
+        local equippedIP = equipped and (equipped.itemPower or 0) or 0
+        local newIP = newItem and (newItem.itemPower or 0) or 0
 
         local leftItem = newItem
         local leftTitle = "新装备"
-        local leftArrow = (newPower > equippedPower) and "↑" or nil
+        local leftArrow = (newIP > equippedIP) and "↑" or nil
         local rightItem = equipped
         local rightTitle = "当前穿戴"
-        local rightArrow = (equippedPower > newPower) and "↑" or nil
+        local rightArrow = (equippedIP > newIP) and "↑" or nil
 
         local headerBg = { 35, 40, 55, 250 }
         local headerItem = leftItem or rightItem

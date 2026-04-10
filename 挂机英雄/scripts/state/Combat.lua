@@ -43,6 +43,12 @@ function Combat.Install(GameState)
             return 0, true
         end
 
+        -- 引导打断: 被命中时尝试打断引导 (闪避的不算)
+        local ok_ch, ChannelSystem = pcall(require, "battle.ChannelSystem")
+        if ok_ch and ChannelSystem.TryInterrupt then
+            ChannelSystem.TryInterrupt()
+        end
+
         -- DEF减免 (v3.1: K 随怪物等级缩放)
         local dmg = math.max(1, math.floor(rawDmg * GameState.GetDEFMul(monsterLevel)))
 
@@ -58,6 +64,11 @@ function Combat.Install(GameState)
         local lastStandVal = AffixHelper.GetAffixValue("last_stand")
         if lastStandVal > 0 and GameState.playerHP < GameState.GetMaxHP() * 0.20 then
             dmg = math.max(1, math.floor(dmg * (1 - lastStandVal)))
+        end
+
+        -- 闪光传送: 30%伤害减免 (3秒)
+        if (GameState._teleportDmgReduceTimer or 0) > 0 then
+            dmg = math.max(1, math.floor(dmg * 0.70))
         end
 
         -- 铁壁要塞2件: 受击获得护盾
@@ -204,6 +215,13 @@ function Combat.Install(GameState)
             return true
         end
         return false
+    end
+
+    --- 回复法力 (不超过上限)
+    --- @param amount number 法力回复量
+    GameState.AddMana = function(amount)
+        local maxMana = GameState.GetMaxMana()
+        GameState.playerMana = math.min(maxMana, GameState.playerMana + amount)
     end
 
     -- Debuff 施加/更新/护盾/OnKillShield 已迁移至 state/BuffRuntime.lua

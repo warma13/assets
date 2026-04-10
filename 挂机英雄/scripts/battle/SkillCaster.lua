@@ -47,6 +47,12 @@ function SkillCaster.CastSkill(bs, skillCfg, lv)
 
     local p = bs.playerBattle
     DispatchCast(bs, skillCfg, lv, p)
+
+    -- 元素归一: 记录本次技能元素 (施放后记录, 供下次 BuildContext 比较)
+    if skillCfg.element then
+        GameState._lastSkillElement = skillCfg.element
+    end
+
     return true
 end
 

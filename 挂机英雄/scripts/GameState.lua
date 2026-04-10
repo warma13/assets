@@ -153,6 +153,13 @@ function GameState.Init()
         totalRuns     = 0,   -- 累计挑战次数
     }
 
+    -- 套装秘境
+    GameState.setDungeon = {
+        attemptsToday = 0,   -- 今日已用次数
+        lastDate      = "",  -- 上次重置日期
+        totalRuns     = 0,   -- 累计挑战次数
+    }
+
     -- 深渊模式
     GameState.abyss = {
         active    = false,   -- 当前是否在深渊中

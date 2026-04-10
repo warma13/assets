@@ -159,41 +159,46 @@ function CombatCore.PlayerAttack(bs, targetIdx)
     local target = bs.enemies[targetIdx]
     if not target or target.dead then return end
 
+    -- 引导中: 跳过所有攻击 (引导占用攻击槽位)
+    local ChannelSystem = require("battle.ChannelSystem")
+    if ChannelSystem.IsChanneling() then return end
+
     local p = bs.playerBattle
     local SkillCaster = require("battle.SkillCaster")
 
-    -- 优先尝试核心技能 (D4机制: 消耗法力, 无CD, 走攻速)
-    local coreCfg, coreLv = FindEquippedCoreSkill()
-    if coreCfg and coreLv > 0 and GameState.HasMana(coreCfg.manaCost or 0) then
-        -- 核心技能施放 (SkillCaster 内部扣蓝)
-        local success = SkillCaster.CastSkill(bs, coreCfg, coreLv)
-        if success ~= false then
-            -- 套装回调 (通过 BattleSystem 桥接)
-            local BuffManager = require("battle.BuffManager")
-            BuffManager.OnRuneWeaverSkillCast(bs)
-            BuffManager.OnDragonFurySkillHit(bs)
-            BuffManager.OnRuneResonanceSkillHit()
-            return
-        end
-        -- 如果施放失败 (理论上不应到这, HasMana 已检查), 退回基础技能
-    end
-
-    -- 基础技能 (T1)
+    -- 基础/核心技能槽 (基础技能无法力消耗, 核心技能消耗法力)
     local basicSkillId = GameState.GetEquippedBasicSkill()
     if basicSkillId then
         local cfg = SkillTreeConfig.SKILL_MAP[basicSkillId]
         local lv = GameState.GetSkillLevel(basicSkillId)
         if cfg and lv > 0 then
-            SkillCaster.CastSkill(bs, cfg, lv)
-
-            -- 词缀: 连击 (概率连续攻击2次)
-            if not target.dead then
-                local comboVal = AffixHelper.GetAffixValue("combo_strike")
-                if comboVal > 0 and math.random() < comboVal then
-                    SkillCaster.CastSkill(bs, cfg, lv)
+            local manaCost = cfg.manaCost or 0
+            if manaCost > 0 then
+                -- 核心技能 (tier 2): 需要法力, 法力不足时退回普攻
+                if GameState.HasMana(manaCost) then
+                    local success = SkillCaster.CastSkill(bs, cfg, lv)
+                    if success ~= false then
+                        local BuffManager = require("battle.BuffManager")
+                        BuffManager.OnRuneWeaverSkillCast(bs)
+                        BuffManager.OnDragonFurySkillHit(bs)
+                        BuffManager.OnRuneResonanceSkillHit()
+                        return
+                    end
                 end
+                -- 法力不足: 继续到下面的普攻
+            else
+                -- 基础技能 (tier 1): 无法力消耗
+                SkillCaster.CastSkill(bs, cfg, lv)
+
+                -- 词缀: 连击 (概率连续攻击2次)
+                if not target.dead then
+                    local comboVal = AffixHelper.GetAffixValue("combo_strike")
+                    if comboVal > 0 and math.random() < comboVal then
+                        SkillCaster.CastSkill(bs, cfg, lv)
+                    end
+                end
+                return
             end
-            return
         end
     end
 

@@ -10,7 +10,6 @@ local BattleView     = require("BattleView")
 local HUD            = require("ui.HUD")
 local TabBar         = require("ui.TabBar")
 local InventoryPage  = require("ui.InventoryPage")
-local StageSelect    = require("ui.StageSelect")
 local StatusBars     = require("ui.StatusBars")
 local Leaderboard    = require("ui.Leaderboard")
 local Settings       = require("ui.Settings")
@@ -18,6 +17,7 @@ local VersionReward  = require("VersionReward")
 local SaveSystem     = require("SaveSystem")       -- 代理层, 转发到 SlotSaveSystem
 local SlotSaveSystem = require("SlotSaveSystem")
 local StartScreen    = require("ui.StartScreen")
+local StageSelect    = require("ui.StageSelect")
 local StageConfig    = require("StageConfig")
 local Toast          = require("ui.Toast")
 local EventBus       = require("EventBus")
@@ -34,6 +34,8 @@ local WorldBossResult   = require("ui.WorldBossResult")
 local BossCodex         = require("ui.BossCodex")
 local ResourceDungeon        = require("ResourceDungeon")
 local ResourceDungeonResult  = require("ui.ResourceDungeonResult")
+local SetDungeon             = require("SetDungeon")
+local SetDungeonResult       = require("ui.SetDungeonResult")
 local GameMode               = require("GameMode")
 local RewardPanel            = require("ui.RewardPanel")
 local AbyssMode              = require("AbyssMode")
@@ -391,32 +393,15 @@ local function BuildGameUI()
         flexDirection = "row", alignItems = "center",
         paddingHorizontal = 8, gap = 4,
         children = {
-            -- 关卡选择
+            -- 当前章节显示
             UI.Panel {
                 flexDirection = "row", alignItems = "center", gap = 2,
                 backgroundColor = BTN_BG, borderRadius = BTN_RAD,
                 paddingHorizontal = BTN_PH, paddingVertical = BTN_PV,
-                onClick = Utils.Debounce(function() StageSelect.Toggle() end, 0.3),
+                onClick = function() StageSelect.Toggle() end,
                 children = {
                     UI.Panel { width = ICON_SZ, height = ICON_SZ, backgroundImage = "book_icon_20260307140038.png", backgroundFit = "contain" },
-                    UI.Label { text = "章节", fontSize = BTN_FONT, color = LABEL_COLOR },
-                },
-            },
-            -- 深渊
-            UI.Panel {
-                flexDirection = "row", alignItems = "center", gap = 2,
-                backgroundColor = BTN_BG, borderRadius = BTN_RAD,
-                paddingHorizontal = BTN_PH, paddingVertical = BTN_PV,
-                onClick = Utils.Debounce(function()
-                    if not GameMode.IsAnyActive() then
-                        GameMode.SwitchTo("abyss")
-                    elseif not GameMode.Is("abyss") then
-                        Toast.Show("请先退出当前模式")
-                    end
-                end, 0.3),
-                children = {
-                    UI.Panel { width = ICON_SZ, height = ICON_SZ, backgroundImage = "image/icon_abyss_20260324043658.png", backgroundFit = "contain" },
-                    UI.Label { text = "深渊", fontSize = BTN_FONT, color = GameMode.Is("abyss") and { 180, 120, 255, 255 } or LABEL_COLOR },
+                    UI.Label { id = "quickbar_chapter_label", text = "章节", fontSize = BTN_FONT, color = LABEL_COLOR },
                 },
             },
             -- 排行榜
@@ -428,24 +413,6 @@ local function BuildGameUI()
                 children = {
                     UI.Panel { width = ICON_SZ, height = ICON_SZ, backgroundImage = Config.LEADERBOARD_ICON, backgroundFit = "contain" },
                     UI.Label { text = "排行", fontSize = BTN_FONT, color = LABEL_COLOR },
-                },
-            },
-            -- 奖励入口（点击弹出 Tab 面板: 奖励 / 日常 / 离线）
-            UI.Panel {
-                flexDirection = "row", alignItems = "center", gap = 2,
-                backgroundColor = BTN_BG, borderRadius = BTN_RAD,
-                paddingHorizontal = BTN_PH, paddingVertical = BTN_PV,
-                onClick = Utils.Debounce(function() RewardPanel.Toggle() end, 0.3),
-                children = {
-                    UI.Panel { width = ICON_SZ, height = ICON_SZ, backgroundImage = VersionReward.GetIcon(), backgroundFit = "contain" },
-                    UI.Label { text = "奖励", fontSize = BTN_FONT, color = LABEL_COLOR },
-                    RewardPanel.HasRedDot() and UI.Panel {
-                        width = 8, height = 8,
-                        backgroundColor = { 255, 60, 60, 255 },
-                        borderRadius = 4,
-                        position = "absolute",
-                        top = 0, right = 0,
-                    } or nil,
                 },
             },
         },
@@ -473,17 +440,6 @@ local function BuildGameUI()
                 children = {
                     UI.Panel { width = ICON_SZ, height = ICON_SZ, backgroundImage = "icon_trial_tower_20260311105357.png", backgroundFit = "contain" },
                     UI.Label { text = "挑战", fontSize = BTN_FONT, color = LABEL_COLOR },
-                },
-            },
-            -- 存档 (弹出槽位选择器, 保存到指定槽位)
-            UI.Panel {
-                flexDirection = "row", alignItems = "center", gap = 2,
-                backgroundColor = BTN_BG, borderRadius = BTN_RAD,
-                paddingHorizontal = BTN_PH, paddingVertical = BTN_PV,
-                onClick = Utils.Debounce(function() StartScreen.ShowSavePicker() end, 0.3),
-                children = {
-                    UI.Panel { width = ICON_SZ, height = ICON_SZ, backgroundImage = "icon_save_20260311105336.png", backgroundFit = "contain" },
-                    UI.Label { text = "存档", fontSize = BTN_FONT, color = LABEL_COLOR },
                 },
             },
             -- 设置
@@ -540,7 +496,7 @@ local function BuildGameUI()
                 width = "100%", height = 20,
                 flexDirection = "row", alignItems = "center", justifyContent = "center",
                 backgroundColor = { 14, 18, 28, 250 },
-                onClick = Utils.Debounce(function() StageSelect.Toggle() end, 0.3),
+                onClick = function() StageSelect.Toggle() end,
                 children = {
                     UI.Label { id = "stage_info_text", text = "", fontSize = 10, fontColor = { 255, 220, 150, 200 }, textAlign = "center" },
                 },
@@ -565,7 +521,6 @@ local function BuildGameUI()
 
     -- overlay 挂载到 uiRoot (quickBar 在 battleArea 内, 不受影响)
     InventoryPage.SetOverlayRoot(uiRoot_)
-    StageSelect.SetOverlayRoot(uiRoot_)
     Leaderboard.SetOverlayRoot(uiRoot_)
     Settings.SetOverlayRoot(uiRoot_)
     Settings.Init()
@@ -611,6 +566,14 @@ local function BuildGameUI()
     WorldBossResult.SetOverlayRoot(uiRoot_)
     BossCodex.SetOverlayRoot(uiRoot_)
     StartScreen.SetSaveOverlayRoot(uiRoot_)
+    StageSelect.SetOverlayRoot(uiRoot_)
+    StageSelect.SetJumpCallback(function(chapter, stage)
+        GameState.stage.chapter = chapter
+        GameState.stage.stage = stage
+        BattleSystem.Init(BattleSystem.areaW, BattleSystem.areaH)
+        RefreshStageInfo()
+        SlotSaveSystem.SaveNow()
+    end)
 
     WorldBossResult.SetCloseCallback(function()
         GameMode.SwitchTo(nil)
@@ -624,13 +587,12 @@ local function BuildGameUI()
         GameMode.SwitchTo(nil)
     end)
 
-    StageSelect.SetJumpCallback(function(chapter, stage)
-        GameMode.ExitCurrent()  -- 若在特殊模式中则退出 (不触发过渡)
-        GameState.stage.chapter = chapter
-        GameState.stage.stage = stage
-        BattleSystem.RetryStage()
-        RefreshStageInfo()
-        print("[Main] Jump to stage " .. chapter .. "-" .. stage)
+    ChallengePanel.SetSetDungeonStartCallback(function()
+        GameMode.SwitchTo("setDungeon")
+    end)
+    SetDungeonResult.SetOverlayRoot(uiRoot_)
+    SetDungeonResult.SetCloseCallback(function()
+        GameMode.SwitchTo(nil)
     end)
 
     -- 重置战斗初始化标记 (切换存档时需要重新初始化)
@@ -648,9 +610,9 @@ local function TeardownGameUI()
 
     -- 1. 关闭所有可能打开的浮层/弹窗
     CloseIdleOverlay()
-    StageSelect.Close()
     Leaderboard.Hide()
     Settings.Hide()
+    StageSelect.Close()
     VersionReward.Hide()
     OfflineChest.Close()
     ChallengePanel.Close()
@@ -660,6 +622,7 @@ local function TeardownGameUI()
     WorldBossResult.Close()
     BossCodex.Close()
     ResourceDungeonResult.Close()
+    SetDungeonResult.Close()
 
     -- 2. 退出特殊模式 (统一走适配器 OnExit)
     GameMode.ExitCurrent()
@@ -893,6 +856,12 @@ function HandleUpdate(eventType, eventData)
     -- 折光矿脉连续挑战倒计时
     ResourceDungeonResult.Update(dt)
 
+    -- 套装秘境结算检测
+    if BattleSystem.setDungeonEnded and not SetDungeonResult.IsOpen() then
+        SetDungeonResult.Show(SetDungeon.fightResult)
+        BattleSystem.setDungeonEnded = false
+    end
+
     -- 升级检测: 等级变化时触发音效 + 粒子
     levelUpCooldown_ = math.max(0, levelUpCooldown_ - dt)
     local curLevel = GameState.player.level
@@ -945,7 +914,8 @@ function RefreshStageInfo()
     -- 特殊模式: 通过 GameMode 适配器获取显示名称
     local mode = GameMode.GetActive()
     if mode and mode.GetDisplayName then
-        label:SetText(mode:GetDisplayName())
+        local displayName = mode:GetDisplayName()
+        label:SetText(displayName)
         return
     end
 

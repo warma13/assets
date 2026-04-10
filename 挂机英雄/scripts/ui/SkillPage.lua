@@ -224,6 +224,7 @@ function SkillPage.Create()
                                 children = {
                                     UI.Label { id = "info_name", text = "选择技能", fontSize = 12, fontColor = Colors.text },
                                     UI.Label { id = "info_type", text = "", fontSize = 8, fontColor = Colors.textDim },
+                                    UI.Label { id = "info_mana", text = "", fontSize = 8, fontColor = { 100, 160, 255, 200 } },
                                 },
                             },
                             UI.Label { id = "info_desc", text = "点击技能节点查看详情", fontSize = 9, fontColor = Colors.textDim,
@@ -231,7 +232,7 @@ function SkillPage.Create()
                             UI.Label { id = "info_req", text = "", fontSize = 8, fontColor = { 255, 180, 80, 180 } },
                         },
                     },
-                    -- 升级 / 降级 / 装备 按钮
+                    -- 升级 / 降级 按钮（左）
                     UI.Panel {
                         gap = 2,
                         alignItems = "center",
@@ -239,7 +240,7 @@ function SkillPage.Create()
                             UI.Button {
                                 id = "info_upgrade_btn",
                                 text = "升级",
-                                width = 52, height = 24,
+                                width = 48, height = 22,
                                 fontSize = 10,
                                 variant = "primary",
                                 disabled = true,
@@ -258,7 +259,7 @@ function SkillPage.Create()
                             UI.Button {
                                 id = "info_downgrade_btn",
                                 text = "降级",
-                                width = 52, height = 18,
+                                width = 48, height = 18,
                                 fontSize = 9,
                                 backgroundColor = { 90, 50, 60, 200 },
                                 fontColor = { 255, 180, 180, 255 },
@@ -269,21 +270,22 @@ function SkillPage.Create()
                                     end
                                 end,
                             },
-                            UI.Button {
-                                id = "info_equip_btn",
-                                text = "装备",
-                                width = 52, height = 18,
-                                fontSize = 9,
-                                backgroundColor = { 50, 80, 60, 200 },
-                                fontColor = { 180, 255, 200, 255 },
-                                disabled = true,
-                                onClick = function()
-                                    if selectedSkill_ then
-                                        SkillPage.QuickEquip(selectedSkill_)
-                                    end
-                                end,
-                            },
                         },
+                    },
+                    -- 装备按钮（右）
+                    UI.Button {
+                        id = "info_equip_btn",
+                        text = "装备",
+                        width = 52, height = 28,
+                        fontSize = 10,
+                        backgroundColor = { 50, 80, 60, 200 },
+                        fontColor = { 180, 255, 200, 255 },
+                        disabled = true,
+                        onClick = function()
+                            if selectedSkill_ then
+                                SkillPage.QuickEquip(selectedSkill_)
+                            end
+                        end,
                     },
                 },
             },
@@ -327,7 +329,7 @@ function SkillPage.QuickEquip(skill)
         return
     end
 
-    if skill.isBasic then
+    if skill.isBasic or skill.tier == 2 then
         local ok, err = GameState.EquipBasicSkill(skill.id)
         if ok then
             SaveSystem.MarkDirty()
@@ -412,8 +414,12 @@ function SkillPage.RefreshInfo()
     local isMaxed = lv >= skill.maxLevel
     local ec = GetSkillColor(skill)
 
-    -- 图标面板
-    local iconPath = Config.SKILL_ICON_PATHS[skill.id]
+    -- 图标面板 (增强节点使用其所增强的父技能图标)
+    local iconLookupId = skill.id
+    if skill.nodeType == "enhance" and skill.parentSkill then
+        iconLookupId = skill.parentSkill
+    end
+    local iconPath = Config.SKILL_ICON_PATHS[iconLookupId]
     local iconPanel = page_:FindById("info_icon")
     if iconPanel then
         local iconBg = lv > 0
@@ -424,7 +430,7 @@ function SkillPage.RefreshInfo()
             iconPanel:SetStyle({ backgroundImage = iconPath, backgroundFit = "contain" })
             set("info_icon_lv", "")
         else
-            iconPanel:SetStyle({ backgroundImage = nil })
+            iconPanel:SetStyle({ backgroundImage = "" })
             set("info_icon_lv", lv > 0 and ("Lv" .. lv) or "")
         end
     end
@@ -454,6 +460,10 @@ function SkillPage.RefreshInfo()
     end
     set("info_type", typeText)
 
+    -- 法力消耗
+    local manaCost = skill.manaCost or 0
+    set("info_mana", manaCost > 0 and ("法力消耗:" .. manaCost) or "")
+
     -- 效果描述
     local eLv = math.max(1, lv)
     local descText
@@ -462,7 +472,7 @@ function SkillPage.RefreshInfo()
     elseif skill.effect then
         local effVal = skill.effect(eLv)
         if type(effVal) == "number" then
-            if effVal == math.floor(effVal) then effVal = math.floor(effVal) end
+            effVal = math.floor(effVal)
             descText = string.format(skill.desc, effVal)
         else
             descText = skill.desc
@@ -473,7 +483,7 @@ function SkillPage.RefreshInfo()
     if lv > 0 and not isMaxed and skill.effect then
         local nextVal = skill.effect(lv + 1)
         if type(nextVal) == "number" then
-            if nextVal == math.floor(nextVal) then nextVal = math.floor(nextVal) end
+            nextVal = math.floor(nextVal)
             local nextDesc = string.format(skill.desc, nextVal)
             descText = descText .. " → " .. nextDesc
         end
@@ -496,8 +506,7 @@ function SkillPage.RefreshInfo()
         if isMaxed then
             btn:SetText("满级")
         else
-            local upCost = SkillTreeConfig.GetUpgradeCost(skill.id, lv)
-            btn:SetText("升级(" .. upCost .. "点)")
+            btn:SetText("升级")
         end
     end
 
@@ -558,14 +567,14 @@ function SkillPage.RefreshLoadout()
                 basicSlot:SetStyle({ backgroundImage = iconPath, backgroundFit = "contain" })
                 set("slot_basic_text", "")
             else
-                basicSlot:SetStyle({ backgroundImage = nil })
+                basicSlot:SetStyle({ backgroundImage = "" })
                 set("slot_basic_text", cfg and cfg.name or "基础")
             end
         else
             basicSlot:SetStyle({
                 backgroundColor = { 50, 45, 30, 200 },
                 borderColor = { 200, 180, 80, 180 },
-                backgroundImage = nil,
+                backgroundImage = "",
             })
             set("slot_basic_text", "基础")
         end
@@ -592,14 +601,14 @@ function SkillPage.RefreshLoadout()
                     slot:SetStyle({ backgroundImage = iconPath, backgroundFit = "contain" })
                     set(textId, "")
                 else
-                    slot:SetStyle({ backgroundImage = nil })
+                    slot:SetStyle({ backgroundImage = "" })
                     set(textId, cfg and cfg.name or tostring(i))
                 end
             else
                 slot:SetStyle({
                     backgroundColor = { 35, 40, 55, 200 },
                     borderColor = { 100, 120, 180, 120 },
-                    backgroundImage = nil,
+                    backgroundImage = "",
                 })
                 set(textId, tostring(i))
             end

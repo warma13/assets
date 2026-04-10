@@ -361,8 +361,22 @@ function SkillTreeCanvas:DrawEnhanceLines(nvg, layout)
         local line = info and parentSkill.enhances[info.lineIdx]
         local reqId = line and line.requires
 
-        if reqId then
-            -- 有前置: 从前置增强节点连过来
+        -- 隐式Y形子节点: 从Y根节点连过来
+        local implicitParentId = en.implicitYParent
+        if implicitParentId then
+            local rootNode = layout.enhNodes[implicitParentId]
+            if rootNode then
+                local rootLv = GameState.GetSkillLevel(implicitParentId)
+                local alpha = (rootLv > 0 and enhLv > 0) and 150 or 40
+                nvgBeginPath(nvg)
+                nvgMoveTo(nvg, rootNode.x, rootNode.y)
+                nvgLineTo(nvg, en.x, en.y)
+                nvgStrokeWidth(nvg, enhLv > 0 and 1.5 or 0.6)
+                nvgStrokeColor(nvg, nvgRGBA(ec[1], ec[2], ec[3], alpha))
+                nvgStroke(nvg)
+            end
+        elseif reqId then
+            -- 显式前置: 从前置增强节点连过来
             local reqNode = layout.enhNodes[reqId]
             if reqNode then
                 local reqLv = GameState.GetSkillLevel(reqId)
@@ -581,6 +595,10 @@ function SkillTreeCanvas:DrawEnhanceNodes(nvg, layout)
                 if line.requires and GameState.GetSkillLevel(line.requires) <= 0 then
                     isRequiresLocked = true
                 end
+                -- 隐式Y形子节点: Y根节点未学则锁定
+                if en.implicitYParent and GameState.GetSkillLevel(en.implicitYParent) <= 0 then
+                    isRequiresLocked = true
+                end
             end
         end
         local isLocked = isMutuallyBlocked or isRequiresLocked
@@ -631,7 +649,33 @@ function SkillTreeCanvas:DrawEnhanceNodes(nvg, layout)
         end
         nvgStroke(nvg)
 
-        -- 文字
+        -- 图标 (使用父技能图标) + 文字回退
+        local parentIconPath = Config.SKILL_ICON_PATHS and Config.SKILL_ICON_PATHS[en.parentId]
+        local enhIconDrawn = false
+        if parentIconPath then
+            if not self.iconHandles_ then self.iconHandles_ = {} end
+            local iconKey = "enh_" .. enhId
+            if not self.iconHandles_[iconKey] then
+                self.iconHandles_[iconKey] = nvgCreateImage(nvg, parentIconPath, 0)
+            end
+            local imgH = self.iconHandles_[iconKey]
+            if imgH and imgH > 0 then
+                local iconAlpha = (lv > 0) and 1.0 or (isLocked and 0.2 or 0.35)
+                local pad = 3
+                local imgSize = ES - pad * 2
+                -- 菱形内绘制图标 (正方形裁剪区域)
+                local innerHs = hs * 0.65
+                local imgPaint = nvgImagePattern(nvg, cx - innerHs, cy - innerHs,
+                    innerHs * 2, innerHs * 2, 0, imgH, iconAlpha)
+                nvgBeginPath(nvg)
+                nvgRoundedRect(nvg, cx - innerHs, cy - innerHs,
+                    innerHs * 2, innerHs * 2, 3)
+                nvgFillPaint(nvg, imgPaint)
+                nvgFill(nvg)
+                enhIconDrawn = true
+            end
+        end
+        -- 状态标记覆盖在图标上方
         nvgFontFace(nvg, "sans")
         nvgFontSize(nvg, 9)
         nvgTextAlign(nvg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -641,7 +685,7 @@ function SkillTreeCanvas:DrawEnhanceNodes(nvg, layout)
         elseif isRequiresLocked then
             nvgFillColor(nvg, nvgRGBA(120, 80, 80, 120))
             nvgText(nvg, cx, cy, "🔒")
-        elseif not isMutuallyBlocked then
+        elseif not enhIconDrawn and not isMutuallyBlocked then
             nvgFillColor(nvg, nvgRGBA(200, 210, 230, 100))
             nvgText(nvg, cx, cy, "+")
         end

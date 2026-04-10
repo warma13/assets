@@ -149,23 +149,7 @@ function DrawFamilyEffects.Install(BattleView, imgHandles)
                     nvgText(nvg, sx, hpY - 12, "◆精英")
                 end
 
-                -- 精英边框光环
-                local glowAlpha
-                if e.eliteRank == "champion" then
-                    glowAlpha = math.floor(40 + math.sin(time * 4) * 20)
-                    nvgBeginPath(nvg)
-                    nvgCircle(nvg, sx, sy, r * 1.6)
-                    nvgStrokeColor(nvg, nvgRGBA(255, 60, 60, glowAlpha))
-                    nvgStrokeWidth(nvg, 2.0)
-                    nvgStroke(nvg)
-                else
-                    glowAlpha = math.floor(30 + math.sin(time * 3) * 15)
-                    nvgBeginPath(nvg)
-                    nvgCircle(nvg, sx, sy, r * 1.4)
-                    nvgStrokeColor(nvg, nvgRGBA(255, 165, 0, glowAlpha))
-                    nvgStrokeWidth(nvg, 1.5)
-                    nvgStroke(nvg)
-                end
+                -- 精英边框光环 (已移除: 不再渲染圆圈描边)
             end
 
             -- ── 精英护盾条 (蓝色, 血条上方) ──
@@ -210,40 +194,12 @@ function DrawFamilyEffects.Install(BattleView, imgHandles)
                 end
             end
 
-            -- ── 虚空相位半透明 ──
-            if e._phaseShifted then
-                -- 紫色虚影光环
-                local phaseAlpha = math.floor(30 + math.sin(time * 6) * 20)
-                local phaseGlow = nvgRadialGradient(nvg, sx, sy, r * 0.5, r * 2.0,
-                    nvgRGBA(120, 60, 200, phaseAlpha),
-                    nvgRGBA(80, 40, 160, 0))
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, r * 2.0)
-                nvgFillPaint(nvg, phaseGlow)
-                nvgFill(nvg)
-            end
+            -- ── 虚空相位半透明 (已移除光环) ──
 
-            -- ── 群猎光环 (beasts) ──
-            if e.familyType == "beasts" and fState and fState.packHuntActive then
-                local packAlpha = math.floor(25 + math.sin(time * 5 + e.x * 0.05) * 15)
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, r * 1.3)
-                nvgStrokeColor(nvg, nvgRGBA(255, 100, 50, packAlpha))
-                nvgStrokeWidth(nvg, 1.5)
-                nvgStroke(nvg)
-            end
+            -- ── 群猎光环 (已移除) ──
 
-            -- ── 领袖光环 (fiends) ──
+            -- ── 领袖光环 (已移除光环, 保留文字标记) ──
             if fState and fState.leaderAlive == e then
-                local leaderAlpha = math.floor(35 + math.sin(time * 2) * 15)
-                local leaderGlow = nvgRadialGradient(nvg, sx, sy, r, r * 2.5,
-                    nvgRGBA(180, 60, 220, leaderAlpha),
-                    nvgRGBA(140, 40, 180, 0))
-                nvgBeginPath(nvg)
-                nvgCircle(nvg, sx, sy, r * 2.5)
-                nvgFillPaint(nvg, leaderGlow)
-                nvgFill(nvg)
-                -- 领袖标记
                 nvgFontFace(nvg, "sans")
                 nvgFontSize(nvg, 7)
                 nvgTextAlign(nvg, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)

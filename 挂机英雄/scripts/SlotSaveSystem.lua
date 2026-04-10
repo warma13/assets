@@ -27,7 +27,7 @@ local CLOUD_TIMEOUT        = 10     -- 云端请求超时(秒)
 local MAX_RETRY            = 3      -- 最大重试次数
 local MIN_OFFLINE_SEC      = 300    -- 离线奖励最短时间(秒)
 local MAX_OFFLINE_SEC      = 28800  -- 离线奖励最长时间(秒)
-local CURRENT_SAVE_VERSION = 10
+local CURRENT_SAVE_VERSION = 12
 local MAX_SLOTS            = 10
 local SAVE_FORMAT          = 2      -- 分片存档格式版本
 local CHUNK_MAX_BYTES      = 9 * 1024  -- 单 key 最大字节数 (9KB, 留1KB安全余量)
@@ -179,7 +179,7 @@ local function CompressItem(item)
     c.q   = item.qualityIdx     -- qualityIdx
     c.ip  = item.itemPower      -- itemPower (v8 新增)
     c.si  = item.setId          -- setId
-    c.e   = item.element        -- element (weapon only)
+    -- (v4.0: c.e = element 已移除, 武器不再有元素)
     c.n   = item.name           -- name (display name, if exists)
 
     -- 锁定状态 (仅锁定时写入)
@@ -207,12 +207,20 @@ local function CompressItem(item)
         if hasGem then c.gm = cg end
     end
 
+    -- 主属性 (固有, 不占词缀格)
+    if item.mainStatId then
+        c.msi = item.mainStatId
+        c.msb = item.mainStatBase
+    end
+
     -- 统一词缀压缩 (v8: id + value + greater)
     if item.affixes and #item.affixes > 0 then
         local ca = {}
         for i, aff in ipairs(item.affixes) do
             local entry = { i = aff.id, v = aff.value }
             if aff.greater then entry.g = 1 end
+            if aff.baseValue then entry.bv = aff.baseValue end
+            if aff.milestoneCount and aff.milestoneCount > 0 then entry.mc = aff.milestoneCount end
             ca[i] = entry
         end
         c.af = ca
@@ -279,12 +287,15 @@ local function DecompressItem(c)
         item.affixes = {}
         for i, ca in ipairs(c.af) do
             if ca.v ~= nil then
-                -- v8 格式: 有 value 字段
-                item.affixes[i] = {
+                -- v8+ 格式: 有 value 字段
+                local aff = {
                     id = ca.i,
                     value = ca.v,
                     greater = ca.g == 1,
                 }
+                if ca.bv then aff.baseValue = ca.bv end
+                if ca.mc then aff.milestoneCount = ca.mc end
+                item.affixes[i] = aff
             else
                 -- v7 格式: 旧 proc 词缀, 只有 id + enhanced
                 item.affixes[i] = {
@@ -293,6 +304,13 @@ local function DecompressItem(c)
                 }
             end
         end
+    end
+
+    -- 主属性 (固有, 不占词缀格) — 从压缩字段恢复, value 由 IP+升级等级 重算
+    if c.msi then
+        item.mainStatId   = c.msi
+        item.mainStatBase = c.msb
+        item.mainStatValue = Config.CalcMainStatValueFull(c.msb, item.itemPower or 100, item.upgradeLv)
     end
 
     -- 旧字段解压 (v7 兼容: ms/mv/bmv/ss/t/tm → 供迁移代码使用)
@@ -867,7 +885,9 @@ local MIGRATIONS = {
             local baseIP = Config.CalcBaseIP(chapter)
             local qi = item.qualityIdx or 1
             local ipQMul = Config.IP_QUALITY_MUL[qi] or 0.5
-            item.itemPower = math.floor(baseIP * ipQMul + (item.upgradeLv or 0) * Config.IP_PER_UPGRADE)
+            -- v4.0: IP_PER_UPGRADE 已移除; 旧迁移路径仍需旧值 5
+            local OLD_IP_PER_UPGRADE = 5
+            item.itemPower = math.floor(baseIP * ipQMul + (item.upgradeLv or 0) * OLD_IP_PER_UPGRADE)
 
             -- 5. 写入新结构, 删除旧字段
             item.affixes = newAffixes
@@ -947,6 +967,84 @@ local MIGRATIONS = {
         end
 
         data.version = 10
+        return data
+    end,
+
+    -- v10 → v11: 升级系统重设计 — IP 不再含升级加成, 词缀改用里程碑机制
+    -- 旧公式: ip += upgradeLv * 5, affValue *= (1 + upgradeLv * 0.03)
+    -- v10→v11: IP 纯净化, 词缀反推 baseValue, 里程碑计数归零
+    [10] = function(data)
+        local OLD_IP_PER_UPGRADE = 5
+        local OLD_AFFIX_GROWTH   = 0.03  -- 旧版每级词缀增长率
+
+        local function migrateItem(item)
+            if not item or type(item) ~= "table" then return end
+            local upgLv = item.upgradeLv or 0
+            if upgLv <= 0 then return end
+
+            -- 1. 回滚 IP: 去除旧的升级 IP 加成
+            if item.itemPower then
+                item.itemPower = item.itemPower - upgLv * OLD_IP_PER_UPGRADE
+                if item.itemPower < 1 then item.itemPower = 1 end
+            end
+
+            -- 2. 词缀: 反推 baseValue, 里程碑计数归零
+            -- (旧存档无法还原随机选择历史, 迁移后词缀回到基础值)
+            if item.affixes then
+                for _, aff in ipairs(item.affixes) do
+                    if aff.value and aff.value > 0 then
+                        local oldMul = 1 + upgLv * OLD_AFFIX_GROWTH
+                        local baseVal = aff.value / oldMul
+                        aff.baseValue = baseVal
+                        aff.value = baseVal  -- 里程碑归零, value = baseValue
+                        aff.milestoneCount = 0
+                    end
+                end
+            end
+
+            -- 3. 重算主属性 (用新公式, 含升级加成)
+            if item.mainStatId and item.mainStatBase then
+                item.mainStatValue = Config.CalcMainStatValueFull(
+                    item.mainStatBase, item.itemPower, upgLv)
+            end
+        end
+
+        if data.equipment and type(data.equipment) == "table" then
+            for _, item in pairs(data.equipment) do migrateItem(item) end
+        end
+        if data.inventory and type(data.inventory) == "table" then
+            for _, item in ipairs(data.inventory) do migrateItem(item) end
+        end
+
+        local count = 0
+        local function countUpgraded(item)
+            if item and type(item) == "table" and (item.upgradeLv or 0) > 0 then
+                count = count + 1
+            end
+        end
+        if data.equipment then for _, item in pairs(data.equipment) do countUpgraded(item) end end
+        if data.inventory then for _, item in ipairs(data.inventory) do countUpgraded(item) end end
+        if count > 0 then
+            print(string.format("[Migration v10→v11] Migrated %d upgraded items: IP rollback, affix milestone", count))
+        end
+
+        data.version = 11
+        return data
+    end,
+
+    -- v11 → v12: 套装秘境系统 — 套装不再从普通掉落获得, 改为秘境副本产出
+    -- 已穿戴/背包中的套装装备保留不动 (不剥夺), 仅初始化秘境状态字段
+    [11] = function(data)
+        -- 初始化套装秘境存档字段
+        if not data.setDungeon then
+            data.setDungeon = {
+                attemptsToday = 0,
+                lastDate      = "",
+                totalRuns     = 0,
+            }
+        end
+
+        data.version = 12
         return data
     end,
 }
@@ -1094,10 +1192,18 @@ function SlotSaveSystem.Deserialize(data)
             end
         end
 
-        -- 经验迁移: v1→v2 (保留等级，按比例对齐经验)
+        -- 经验迁移: 保留等级，按比例对齐经验
         local savedExpVer = sp.expVersion or 1
         if savedExpVer < Config.EXP_VERSION then
-            local oldNeeded = Config.OldLevelExp(p.level)
+            -- 根据旧版本号选择对应的旧经验公式
+            local oldNeeded
+            if savedExpVer == 1 then
+                oldNeeded = Config.OldLevelExp(p.level)
+            elseif savedExpVer == 2 then
+                oldNeeded = Config.V2LevelExp(p.level)
+            else
+                oldNeeded = Config.LevelExp(p.level)
+            end
             local progress = (oldNeeded > 0) and (p.exp / oldNeeded) or 0
             progress = math.max(0, math.min(progress, 0.999))
             local newNeeded = Config.LevelExp(p.level)

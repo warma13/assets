@@ -366,6 +366,177 @@ function StartScreen._Refresh()
 end
 
 -- ============================================================================
+-- 服务器选择浮层
+-- ============================================================================
+
+---@type Widget|nil
+local serverOverlay_ = nil
+
+--- 关闭服务器选择浮层
+function StartScreen._CloseServerOverlay()
+    if serverOverlay_ and root_ then
+        root_:RemoveChild(serverOverlay_)
+    end
+    serverOverlay_ = nil
+end
+
+--- 构建服务器卡片
+local function BuildServerCard(name, desc, statusText, statusColor, onClick)
+    return UI.Panel {
+        width = "100%",
+        backgroundColor = C.cardBg,
+        borderRadius = 10,
+        borderWidth = 1,
+        borderColor = C.border,
+        marginBottom = 10,
+        paddingHorizontal = 16, paddingVertical = 14,
+        gap = 4,
+        onClick = onClick,
+        children = {
+            -- 第一行: 服务器名 + 状态
+            UI.Panel {
+                flexDirection = "row", alignItems = "center",
+                width = "100%",
+                children = {
+                    UI.Label {
+                        text = name,
+                        fontSize = 15, fontWeight = "bold",
+                        fontColor = C.title,
+                    },
+                    UI.Panel { flexGrow = 1 },
+                    UI.Panel {
+                        backgroundColor = statusColor,
+                        borderRadius = 3,
+                        paddingHorizontal = 6, paddingVertical = 2,
+                        children = {
+                            UI.Label { text = statusText, fontSize = 9, fontColor = { 255, 255, 255, 220 } },
+                        },
+                    },
+                },
+            },
+            -- 第二行: 描述
+            UI.Label {
+                text = desc,
+                fontSize = 11, fontColor = C.textDim,
+            },
+        },
+    }
+end
+
+--- 起始之地: 使用独立 slot 0, 每次点击重新创建
+function StartScreen._EnterStarterServer()
+    if loading_ then return end
+    loading_ = true
+    local toast = getToast()
+    if toast then toast.Show("正在进入起始之地...") end
+
+    getSlotSave().CreateNewSlot(0, function(ok, err)
+        loading_ = false
+        if ok then
+            StartScreen.Hide()
+            if onEnterGame_ then onEnterGame_() end
+        else
+            if toast then toast.Warn("进入失败: " .. (err or "未知错误")) end
+        end
+    end)
+end
+
+--- 打开服务器选择浮层
+function StartScreen._ShowServerOverlay()
+    if serverOverlay_ then StartScreen._CloseServerOverlay() end
+    loading_ = false
+
+    -- 统计灰烬荒原的存档数量
+    local meta = getSlotSave().GetMeta()
+    local slotCount = 0
+    if meta and meta.slots then
+        for k, _ in pairs(meta.slots) do
+            local n = tonumber(k)
+            if n and n >= 1 and n <= 10 then
+                slotCount = slotCount + 1
+            end
+        end
+    end
+    local ashDesc = slotCount > 0
+        and (slotCount .. " 个存档")
+        or "无存档"
+
+    serverOverlay_ = UI.Panel {
+        position = "absolute",
+        top = 0, left = 0,
+        width = "100%", height = "100%",
+        backgroundColor = { 0, 0, 0, 180 },
+        alignItems = "center", justifyContent = "center",
+        onClick = function() StartScreen._CloseServerOverlay() end,
+        children = {
+            UI.Panel {
+                width = "85%", maxWidth = 340,
+                backgroundColor = { 18, 22, 34, 245 },
+                borderRadius = 14,
+                borderWidth = 1, borderColor = { 80, 70, 130, 100 },
+                padding = 16,
+                gap = 10,
+                onClick = function() end, -- 阻止穿透
+                children = {
+                    -- 标题
+                    UI.Label {
+                        text = "选择服务器",
+                        fontSize = 16, fontWeight = "bold",
+                        fontColor = { 240, 230, 255, 255 },
+                        textAlign = "center",
+                        width = "100%",
+                        marginBottom = 4,
+                    },
+                    -- 分隔线
+                    UI.Panel {
+                        width = "100%", height = 1,
+                        backgroundColor = { 120, 100, 180, 40 },
+                    },
+                    -- 灰烬荒原 服
+                    BuildServerCard(
+                        "灰烬荒原",
+                        ashDesc,
+                        "老服",
+                        { 70, 130, 200, 200 },
+                        function()
+                            if loading_ then return end
+                            if slotCount == 0 then
+                                local toast = getToast()
+                                if toast then toast.Warn("已停止注册") end
+                                return
+                            end
+                            StartScreen._CloseServerOverlay()
+                            StartScreen._ShowSlotOverlay()
+                        end
+                    ),
+                    -- 起始之地 服
+                    BuildServerCard(
+                        "起始之地",
+                        "全新冒险，即刻出发",
+                        "新服",
+                        { 80, 170, 90, 200 },
+                        function()
+                            StartScreen._EnterStarterServer()
+                        end
+                    ),
+                    -- 返回按钮
+                    UI.Button {
+                        text = "返回",
+                        variant = "secondary",
+                        width = "100%", height = 36, fontSize = 13,
+                        onClick = function() StartScreen._CloseServerOverlay() end,
+                    },
+                },
+            },
+        },
+    }
+
+    if root_ then
+        root_:AddChild(serverOverlay_)
+    end
+end
+
+-- ============================================================================
 -- 存档选择浮层 (弹出在门面之上)
 -- ============================================================================
 
@@ -546,14 +717,14 @@ function StartScreen.Show(meta, onEnterGame)
                     },
                     -- 中部留白
                     UI.Panel { flexGrow = 4 },
-                    -- 开始游戏按钮
+                    -- 选择服务器按钮
                     UI.Button {
-                        text = "开始游戏",
+                        text = "选择服务器",
                         variant = "primary",
                         width = 200, height = 48, fontSize = 16,
                         borderRadius = 24,
                         onClick = function()
-                            StartScreen._ShowSlotOverlay()
+                            StartScreen._ShowServerOverlay()
                         end,
                     },
                     -- 底部留白
@@ -634,6 +805,8 @@ end
 --- 隐藏开始界面 (由 _LoadSlot / _CreateSlot 成功后调用)
 function StartScreen.Hide()
     root_ = nil
+    serverOverlay_ = nil
+    slotOverlay_ = nil
     loading_ = false
     -- 不清 onEnterGame_: 它在回调中使用, 之后自然失效
 end

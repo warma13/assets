@@ -148,7 +148,7 @@ function TitleSystem.GetUnlockedTitles()
     return result
 end
 
---- 获取所有应显示的称号（已拥有 + 未拥有，战力榜只显示已拥有的）
+--- 获取所有应显示的称号（已拥有 + 未拥有，IP榜只显示已拥有的）
 --- @return table[] 每项 { id, name, desc, flavorText, effects, category, owned, unlockedAt }
 function TitleSystem.GetAllDisplayTitles()
     local unlocked = TitleSystem.GetUnlockedTitles()
@@ -164,7 +164,7 @@ function TitleSystem.GetAllDisplayTitles()
     -- 遍历所有定义的称号
     for tid, def in pairs(TitleConfig.TITLES) do
         local owned = ownedSet[tid] == true
-        -- 战力榜称号：只显示已拥有的
+        -- IP榜称号：只显示已拥有的
         if def.category == "power" and not owned then
             goto continue
         end

@@ -609,28 +609,18 @@ function ShopPage.RenderGachaOverlay()
         children = nameRow,
     })
 
-    -- 战力 + 品质
-    local power = GameState.ItemPower(item)
-    local detailQuality = item.qualityName or ""
-    if item.itemPower then
-        detailQuality = detailQuality .. "  IP " .. item.itemPower
-    end
+    -- IP + 品质
+    local ip = item.itemPower or 0
     table.insert(children, UI.Panel {
         flexDirection = "row", alignItems = "center", gap = 8, marginTop = 2,
         children = {
-            UI.Label { text = "战力 " .. Utils.FormatNumber(math.floor(power)), fontSize = 10, fontColor = { 255, 215, 0, 230 } },
-            UI.Label { text = detailQuality, fontSize = 9, fontColor = { c[1], c[2], c[3], 180 } },
+            UI.Label { text = "IP " .. ip, fontSize = 10, fontColor = { 255, 215, 0, 230 } },
+            UI.Label { text = item.qualityName or "", fontSize = 9, fontColor = { c[1], c[2], c[3], 180 } },
             UI.Label { text = item.slotName or "", fontSize = 9, fontColor = { 180, 185, 200, 200 } },
         },
     })
 
-    -- 武器元素
-    if item.element and item.element ~= "physical" then
-        table.insert(children, UI.Label {
-            text = "元素: " .. (Config.WEAPON_ELEMENTS.names[item.element] or item.element),
-            fontSize = 9, fontColor = { 200, 180, 255, 200 }, marginTop = 1,
-        })
-    end
+    -- (v4.0: 武器元素显示已移除)
 
     -- 分隔线
     table.insert(children, UI.Panel { width = "100%", height = 1, backgroundColor = { 60, 70, 90, 120 }, marginTop = 4, marginBottom = 2 })

@@ -320,17 +320,25 @@ function Settings.Show()
                             Settings.ShowRedeemDialog()
                         end,
                     },
-                    -- 返回主界面 (先弹出存档选择, 保存后返回)
+                    -- 返回主界面 (起始之地直接保存返回, 灰烬荒原弹出存档选择)
                     UI.Button {
                         text = "返回主界面",
                         width = "100%", height = 32, fontSize = 12,
                         variant = "secondary",
                         onClick = function()
                             Settings.Hide()
-                            local StartScreen = require("ui.StartScreen")
-                            StartScreen.ShowSavePicker(function()
+                            local SlotSave = require("SlotSaveSystem")
+                            local activeSlot = SlotSave.GetActiveSlot()
+                            if activeSlot == 0 then
+                                -- 起始之地: 直接保存到 slot 0 并返回主界面
                                 if SwitchSaveSlot then SwitchSaveSlot() end
-                            end)
+                            else
+                                -- 灰烬荒原: 弹出存档选择浮层
+                                local StartScreen = require("ui.StartScreen")
+                                StartScreen.ShowSavePicker(function()
+                                    if SwitchSaveSlot then SwitchSaveSlot() end
+                                end)
+                            end
                         end,
                     },
                     -- 待机模式

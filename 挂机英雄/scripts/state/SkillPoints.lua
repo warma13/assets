@@ -231,8 +231,8 @@ function M.Install(GS)
             return true, nil
         end
         local cfg = SkillTreeConfig.SKILL_MAP[skillId]
-        if not cfg or not cfg.isBasic then
-            return false, "不是基础技能"
+        if not cfg or (not cfg.isBasic and cfg.tier ~= 2) then
+            return false, "不是基础/核心技能"
         end
         if GS.GetSkillLevel(skillId) <= 0 then
             return false, "未学习此技能"
@@ -259,8 +259,8 @@ function M.Install(GS)
         if not cfg or cfg.nodeType ~= "active" then
             return false, "不是主动技能"
         end
-        if cfg.isBasic then
-            return false, "基础技能请使用基础技能槽"
+        if cfg.isBasic or cfg.tier == 2 then
+            return false, "基础/核心技能请使用基础技能槽"
         end
         if GS.GetSkillLevel(skillId) <= 0 then
             return false, "未学习此技能"

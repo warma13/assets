@@ -5,7 +5,7 @@
 local Config = {}
 
 Config.Title = "挂机英雄 · 法师"
-Config.SKILL_PT_INTERVAL = 2   -- 每2级获得1技能点
+Config.SKILL_PT_INTERVAL = 1   -- 每级获得1技能点
 
 -- ============================================================================
 -- 章节数值缩放体系
@@ -21,7 +21,7 @@ Config.PLAYER = {
     atkSpeed = 1.0,      -- 中等攻速
     moveSpeed = 110,     -- 略慢
     pickupRadius = 80,
-    baseRange = 65,      -- 中程攻击距离
+    baseRange = 95,      -- 中程攻击距离
     baseCritDmg = 1.8,   -- 术士暴击伤害更高
     -- 生存属性
     baseHP = 500,        -- 基础生命值
@@ -86,15 +86,12 @@ Config.TENACITY = {
     durFactor = 0.5,       -- 持续时间衰减系数 (抗性×0.5 用于缩短持续时间)
 }
 
--- 攻速边际递减 (渐近线模型)
--- 公式: 实际攻速 = 1.0 + cap × Δ / (Δ + K)
--- 其中 Δ = 原始攻速 - 1.0 (增量部分)
--- cap 随章节缩放: cap = baseCap × attrScale(chapter)
--- buff 乘法作用于递减后的值 (保留爆发感)
-Config.ATK_SPEED_DR = {
-    baseCap = 4.0,   -- 基础增量上限 (Ch1: 最大实际攻速 ≈ 1+4 = 5.0)
-    K       = 3.0,   -- 半值常数 (投入Δ=K时获得 cap/2 的增量)
-}
+-- 攻速双池模型
+-- 公式: 总攻速 = (1 + 第一类 + 第二类) × 武器攻速
+-- 第一类: 面板加成 (装备/套装/被动技能等), 上限 100%
+-- 第二类: 触发加成 (技能buff/药水/debuff等), 上限 100%
+Config.ATK_SPEED_CAP1 = 1.0   -- 第一类(面板)上限 100%
+Config.ATK_SPEED_CAP2 = 1.0   -- 第二类(触发)上限 100%
 
 -- 技能冷却递减 (渐近线模型, 和攻速结构一致)
 -- 公式: cdMul = 1 - maxCDR × totalCDR / (totalCDR + K)
@@ -106,7 +103,7 @@ Config.CDR_DR = {
 
 -- 攻击范围边际递减 (渐近线模型)
 -- 公式: 实际范围 = baseRange + maxBonus × rawBonus / (rawBonus + K)
--- 其中 rawBonus = 点数 × perPoint + 装备 (当前装备无range词条)
+-- 其中 rawBonus = 点数 × perPoint + 装备词缀range
 Config.RANGE_DR = {
     maxBonus = 150,  -- 理论最大范围增量 (实际范围永远 < baseRange + 150)
     K        = 40,   -- 半值常数 (投入rawBonus=40时获得75的增量)
@@ -134,15 +131,7 @@ Config.ELEMENTS = {
     },
 }
 
--- 武器元素配置 (v3.0: 3元素)
-Config.WEAPON_ELEMENTS = {
-    types = { "fire", "ice", "lightning", "physical" },
-    names = {
-        fire = "火焰", ice = "冰霜", lightning = "闪电", physical = "物理",
-    },
-    -- 默认武器元素(无特殊武器时)
-    default = "fire",
-}
+-- (v4.0: 武器元素系统已移除, 默认 fire)
 
 -- 敌人DEF减免常数 (玩家攻击敌人时)
 Config.ENEMY_DEF_K = 100
@@ -150,7 +139,7 @@ Config.ENEMY_DEF_K = 100
 -- DefMul, OldLevelExp, LevelExp → ConfigCalc.lua
 
 -- 经验版本号 (用于存档迁移)
-Config.EXP_VERSION = 2
+Config.EXP_VERSION = 3
 
 -- ============================================================================
 -- 掉落模板 (v1, 2026-03-15)
@@ -195,22 +184,24 @@ Config.WAVE = {
 -- qualityMul 用于主词条缩放; 副词条数量 = subCount
 Config.EQUIP_QUALITY = {
     { name = "白色", color = { 200, 200, 200 }, qualityMul = 1.0, subCount = 0, dropWeight = 50, maxUpgrade = 0 },
-    { name = "绿色", color = { 100, 220, 100 }, qualityMul = 1.5, subCount = 1, dropWeight = 30, maxUpgrade = 5 },
-    { name = "蓝色", color = { 80, 140, 255 },  qualityMul = 2.0, subCount = 2, dropWeight = 15, canHaveSet = true, maxUpgrade = 10 },
-    { name = "紫色", color = { 180, 80, 220 },  qualityMul = 3.0, subCount = 3, dropWeight = 4,  canHaveSet = true, maxUpgrade = 15 },
-    { name = "橙色", color = { 255, 165, 0 },   qualityMul = 5.0, subCount = 4, dropWeight = 1,  canHaveSet = true, maxUpgrade = 20 },
+    { name = "绿色", color = { 100, 220, 100 }, qualityMul = 1.5, subCount = 1, dropWeight = 30, maxUpgrade = 10 },
+    { name = "蓝色", color = { 80, 140, 255 },  qualityMul = 2.0, subCount = 2, dropWeight = 15, canHaveSet = true, maxUpgrade = 20 },
+    { name = "紫色", color = { 180, 80, 220 },  qualityMul = 3.0, subCount = 3, dropWeight = 4,  canHaveSet = true, maxUpgrade = 35 },
+    { name = "橙色", color = { 255, 165, 0 },   qualityMul = 5.0, subCount = 4, dropWeight = 1,  canHaveSet = true, maxUpgrade = 50 },
 }
 
 -- ============================================================================
--- 装备升级系统
+-- 装备升级系统 (v4.1: 主属性逐级提升, 每5级随机一条词缀+2%)
 -- ============================================================================
 
--- 升级每级主词条增长率 (相对初始主词条值)
--- 橙色满级(20): 1 + 20*0.05 = 2.0 倍初始主词条
-Config.UPGRADE_MAIN_GROWTH = 0.05
+-- 升级每级主属性增长率: 加成 = slotBase × upgradeLv × MAIN_GROWTH
+-- 橙色满级(50): slotBase × 50 × 0.04 = 2.0 × slotBase 额外加成
+Config.UPGRADE_MAIN_GROWTH = 0.04
 
--- 每5级提升一条随机副词条, 增量 = 副词条当前值 * SUB_BOOST_RATIO
-Config.UPGRADE_SUB_BOOST_RATIO = 0.5
+-- 词缀里程碑: 每 MILESTONE_INTERVAL 级, 随机选一条词缀 +MILESTONE_BONUS
+-- 橙色50级共10次里程碑, 单条词缀最多被选中10次(+20%)
+Config.UPGRADE_AFFIX_MILESTONE_INTERVAL = 5
+Config.UPGRADE_AFFIX_MILESTONE_BONUS   = 0.02
 
 -- UpgradeCost → ConfigCalc.lua
 
@@ -378,16 +369,17 @@ Config.AFFIX_ENHANCED_COLOR = { 255, 200, 50 }
 -- IP 品质系数: 白/绿/蓝/紫/橙
 Config.IP_QUALITY_MUL = { 0.50, 0.65, 0.80, 0.90, 1.00 }
 
--- 每次升级增加的 IP
-Config.IP_PER_UPGRADE = 5
+-- (v4.0: IP_PER_UPGRADE 已移除, 升级不再改变 IP)
 
 -- IP 区间 → roll 范围
+-- 主线掉落品质 (6档, 封顶0.60; 副本/进阶/附魔/世界Boss 提供0.60→1.00)
 Config.IP_BRACKETS = {
-    { maxIP = 150,  minRoll = 0.30, maxRoll = 0.50 },
-    { maxIP = 300,  minRoll = 0.40, maxRoll = 0.65 },
-    { maxIP = 500,  minRoll = 0.50, maxRoll = 0.80 },
-    { maxIP = 700,  minRoll = 0.60, maxRoll = 0.90 },
-    { maxIP = 9999, minRoll = 0.70, maxRoll = 1.00 },
+    { maxIP = 150,  minRoll = 0.15, maxRoll = 0.30 },  -- 新手期
+    { maxIP = 300,  minRoll = 0.20, maxRoll = 0.38 },  -- 开始关注词缀
+    { maxIP = 450,  minRoll = 0.25, maxRoll = 0.45 },  -- 学会比较装备
+    { maxIP = 600,  minRoll = 0.28, maxRoll = 0.50 },  -- 追求特定词缀
+    { maxIP = 800,  minRoll = 0.30, maxRoll = 0.55 },  -- 主线中后期
+    { maxIP = 9999, minRoll = 0.33, maxRoll = 0.60 },  -- 主线天花板
 }
 
 -- 根据 IP 查询 roll 范围
@@ -407,8 +399,7 @@ Config.AFFIX_COUNT_BY_QUALITY = { 1, 2, 3, 4, 5 }
 -- Greater (大词缀) 概率 (仅橙色)
 Config.AFFIX_GREATER_CHANCE = 0.15
 
--- 升级每级词缀成长率 (+3%/级)
-Config.UPGRADE_AFFIX_GROWTH = 0.03
+-- (v4.0: UPGRADE_AFFIX_GROWTH 已移除, 改用里程碑机制)
 
 -- 附魔费用
 Config.ENCHANT_COST = {
@@ -429,68 +420,70 @@ Config.ENCHANT_COST = {
 --   "proc"      = 触发 (概率触发效果)
 --   nil         = 非伤害类 (防御/功能)
 Config.AFFIX_POOL = {
-    -- ═══ 攻击类 (Attack, 12 条) ═══
+    -- ═══ 攻击类 (Attack, 13 条) ═══
     { id = "atk",           name = "攻击力",     category = "attack",  bucket = "base",     base = 40.0,   ipScale = 1.0,  isPercent = false,
       desc = "攻击力 +%s",           slots = { "weapon", "gloves", "ring", "necklace" } },
-    { id = "spd",           name = "攻速",       category = "attack",  bucket = "speed",    base = 0.03,   ipScale = 0.10, isPercent = false,
+    { id = "spd",           name = "攻速",       category = "attack",  bucket = "speed",    base = 0.03,   ipScale = 0, isPercent = false,
       desc = "攻速 +%s",             slots = { "gloves", "boots", "ring" } },
-    { id = "crit",          name = "暴击率",     category = "attack",  bucket = "crit",     base = 0.04,   ipScale = 0.15, isPercent = true,
+    { id = "crit",          name = "暴击率",     category = "attack",  bucket = "crit",     base = 0.04,   ipScale = 0, isPercent = true,
       desc = "暴击率 +%s%%",         slots = { "gloves", "amulet", "necklace" } },
-    { id = "critDmg",       name = "暴击伤害",   category = "attack",  bucket = "crit",     base = 0.08,   ipScale = 0.15, isPercent = true,
+    { id = "critDmg",       name = "暴击伤害",   category = "attack",  bucket = "crit",     base = 0.08,   ipScale = 0.7, isPercent = true,
       desc = "暴击伤害 +%s%%",       slots = { "amulet", "ring", "weapon" } },
-    { id = "skillDmg",      name = "技能伤害",   category = "attack",  bucket = "xDamage",  base = 0.06,   ipScale = 0.12, isPercent = true,
+    { id = "skillDmg",      name = "技能伤害",   category = "attack",  bucket = "xDamage",  base = 0.06,   ipScale = 0.3, isPercent = true,
       desc = "技能伤害 +%s%%",       slots = { "weapon", "gloves", "necklace" } },
-    { id = "vulnerableDmg", name = "易伤伤害",   category = "attack",  bucket = "additive", base = 0.04,   ipScale = 0.10, isPercent = true,
+    { id = "vulnerableDmg", name = "易伤伤害",   category = "attack",  bucket = "additive", base = 0.04,   ipScale = 0.4, isPercent = true,
       desc = "易伤伤害 +%s%%",       slots = { "weapon", "ring", "necklace" } },
-    { id = "fireDmg",       name = "火焰增伤",   category = "attack",  bucket = "additive", base = 0.05,   ipScale = 0.12, isPercent = true,
+    { id = "fireDmg",       name = "火焰增伤",   category = "attack",  bucket = "additive", base = 0.05,   ipScale = 0.5, isPercent = true,
       desc = "火焰增伤 +%s%%",       slots = { "weapon", "gloves", "amulet" } },
-    { id = "iceDmg",        name = "冰霜增伤",   category = "attack",  bucket = "additive", base = 0.05,   ipScale = 0.12, isPercent = true,
+    { id = "iceDmg",        name = "冰霜增伤",   category = "attack",  bucket = "additive", base = 0.05,   ipScale = 0.5, isPercent = true,
       desc = "冰霜增伤 +%s%%",       slots = { "weapon", "gloves", "amulet" } },
-    { id = "lightningDmg",  name = "闪电增伤",   category = "attack",  bucket = "additive", base = 0.05,   ipScale = 0.12, isPercent = true,
+    { id = "lightningDmg",  name = "闪电增伤",   category = "attack",  bucket = "additive", base = 0.05,   ipScale = 0.5, isPercent = true,
       desc = "闪电增伤 +%s%%",       slots = { "weapon", "gloves", "amulet" } },
-    { id = "combo_strike",  name = "连击",       category = "attack",  bucket = "proc",     base = 0.20,   ipScale = 0.05, isPercent = true,
+    { id = "combo_strike",  name = "连击",       category = "attack",  bucket = "proc",     base = 0.20,   ipScale = 0, isPercent = true,
       desc = "普攻有%s%%概率连续攻击2次", slots = { "weapon", "gloves" } },
-    { id = "elite_hunter",  name = "精英猎手",   category = "attack",  bucket = "additive", base = 0.25,   ipScale = 0.08, isPercent = true,
+    { id = "elite_hunter",  name = "精英猎手",   category = "attack",  bucket = "additive", base = 0.25,   ipScale = 0.3, isPercent = true,
       desc = "对Boss/精英怪伤害+%s%%",   slots = { "weapon", "ring" } },
-    { id = "overpowerDmg",  name = "压制伤害",   category = "attack",  bucket = "overpower", base = 0.05,  ipScale = 0.10, isPercent = true,
+    { id = "overpowerDmg",  name = "压制伤害",   category = "attack",  bucket = "overpower", base = 0.05,  ipScale = 0, isPercent = true,
       desc = "压制伤害 +%s%%",       slots = { "weapon", "gloves", "ring" } },
+    { id = "range",         name = "攻击范围",   category = "attack",  bucket = "range",    base = 8.0,   ipScale = 0.5, isPercent = false,
+      desc = "攻击范围 +%s",         slots = { "weapon", "gloves", "ring" } },
 
     -- ═══ 防御类 (Defense, 11 条) ═══
     { id = "hp",            name = "生命值",     category = "defense", base = 640.0,  ipScale = 1.0,  isPercent = false,
       desc = "生命值 +%s",           slots = { "amulet", "boots", "necklace", "ring" } },
     { id = "def",           name = "防御力",     category = "defense", base = 26.0,   ipScale = 1.0,  isPercent = false,
       desc = "防御力 +%s",           slots = { "boots", "amulet", "ring" } },
-    { id = "hpPct",         name = "生命百分比", category = "defense", base = 0.06,   ipScale = 0.12, isPercent = true,
+    { id = "hpPct",         name = "生命百分比", category = "defense", base = 0.06,   ipScale = 0, isPercent = true,
       desc = "生命值 +%s%%",         slots = { "amulet", "boots", "necklace" } },
     { id = "hpRegen",       name = "生命回复",   category = "defense", base = 13.4,   ipScale = 1.0,  isPercent = false,
       desc = "生命回复 +%s/秒",      slots = { "boots", "necklace", "amulet" } },
-    { id = "lifeSteal",     name = "生命偷取",   category = "defense", base = 0.016,  ipScale = 0.10, isPercent = true,
+    { id = "lifeSteal",     name = "生命偷取",   category = "defense", base = 0.016,  ipScale = 0, isPercent = true,
       desc = "生命偷取 +%s%%",       slots = { "weapon", "ring" } },
-    { id = "shldPct",       name = "护盾比例",   category = "defense", base = 0.02,   ipScale = 0.10, isPercent = true,
+    { id = "shldPct",       name = "护盾比例",   category = "defense", base = 0.02,   ipScale = 0, isPercent = true,
       desc = "护盾比例 +%s%%",       slots = { "amulet", "boots" } },
-    { id = "fireRes",       name = "火焰抗性",   category = "defense", base = 0.16,   ipScale = 0.08, isPercent = true,
+    { id = "fireRes",       name = "火焰抗性",   category = "defense", base = 0.16,   ipScale = 0, isPercent = true,
       desc = "火焰抗性 +%s%%",       slots = { "amulet", "boots", "necklace" } },
-    { id = "iceRes",        name = "冰霜抗性",   category = "defense", base = 0.16,   ipScale = 0.08, isPercent = true,
+    { id = "iceRes",        name = "冰霜抗性",   category = "defense", base = 0.16,   ipScale = 0, isPercent = true,
       desc = "冰霜抗性 +%s%%",       slots = { "amulet", "boots", "necklace" } },
-    { id = "lightningRes",  name = "闪电抗性",   category = "defense", base = 0.16,   ipScale = 0.08, isPercent = true,
+    { id = "lightningRes",  name = "闪电抗性",   category = "defense", base = 0.16,   ipScale = 0, isPercent = true,
       desc = "闪电抗性 +%s%%",       slots = { "gloves", "amulet", "necklace" } },
-    { id = "last_stand",    name = "绝境",       category = "defense", base = 0.30,   ipScale = 0.05, isPercent = true,
+    { id = "last_stand",    name = "绝境",       category = "defense", base = 0.30,   ipScale = 0, isPercent = true,
       desc = "生命低于20%%时减伤+%s%%",   slots = { "amulet", "boots" } },
-    { id = "kill_heal",     name = "击杀回复",   category = "defense", base = 0.02,   ipScale = 0.05, isPercent = true,
+    { id = "kill_heal",     name = "击杀回复",   category = "defense", base = 0.02,   ipScale = 0, isPercent = true,
       desc = "击杀敌人回复%s%%最大生命",  slots = { "weapon", "ring" } },
 
     -- ═══ 功能类 (Utility, 6 条) ═══
-    { id = "luck",          name = "幸运",       category = "utility", base = 0.02,   ipScale = 0.10, isPercent = true,
+    { id = "luck",          name = "幸运",       category = "utility", base = 0.02,   ipScale = 0, isPercent = true,
       desc = "幸运 +%s%%",           slots = { "ring", "necklace" } },
-    { id = "skillCdReduce", name = "冷却缩减",   category = "utility", base = 0.04,   ipScale = 0.10, isPercent = true,
+    { id = "skillCdReduce", name = "冷却缩减",   category = "utility", base = 0.04,   ipScale = 0, isPercent = true,
       desc = "技能冷却缩减 +%s%%",   slots = { "necklace", "amulet" } },
-    { id = "crit_surge",    name = "暴击强化",   category = "attack",  bucket = "proc",     base = 0.35,   ipScale = 0.05, isPercent = true,
+    { id = "crit_surge",    name = "暴击强化",   category = "attack",  bucket = "proc",     base = 0.35,   ipScale = 0, isPercent = true,
       desc = "暴击时额外造成%s%%攻击力的固定伤害", slots = { "gloves", "amulet" } },
-    { id = "greed",         name = "贪婪",       category = "utility", base = 0.30,   ipScale = 0.05, isPercent = true,
+    { id = "greed",         name = "贪婪",       category = "utility", base = 0.30,   ipScale = 0, isPercent = true,
       desc = "金币掉落+%s%%",        slots = { "ring", "necklace" } },
-    { id = "scholar",       name = "博学",       category = "utility", base = 0.20,   ipScale = 0.05, isPercent = true,
+    { id = "scholar",       name = "博学",       category = "utility", base = 0.20,   ipScale = 0, isPercent = true,
       desc = "经验获取+%s%%",        slots = { "necklace" } },
-    { id = "lucky_star",    name = "幸运星",     category = "utility", base = 0.15,   ipScale = 0.05, isPercent = true,
+    { id = "lucky_star",    name = "幸运星",     category = "utility", base = 0.15,   ipScale = 0, isPercent = true,
       desc = "装备掉落品质提升概率+%s%%", slots = { "necklace", "ring" } },
 }
 
@@ -526,7 +519,7 @@ end
 -- 装备槽位 (六槽位)
 -- mainPool: 主词条候选(3选1)   subPool: 副词条候选(6选N)
 Config.EQUIP_SLOTS = {
-    { id = "weapon",   name = "武器", icon = "W", hasElement = true,
+    { id = "weapon",   name = "武器", icon = "W",
       mainPool = { "atk", "vulnerableDmg", "fireDmg", "iceDmg", "lightningDmg" },
       subPool  = { "spd", "crit", "critDmg", "hp", "lifeSteal", "luck", "skillDmg", "fireRes", "iceRes", "lightningRes", "fireDmg", "iceDmg", "lightningDmg" } },
     { id = "gloves",   name = "手套", icon = "G",
@@ -546,14 +539,7 @@ Config.EQUIP_SLOTS = {
       subPool  = { "atk", "spd", "crit", "hp", "def", "shldPct", "hpPct", "fireRes", "iceRes", "lightningRes", "fireDmg", "iceDmg", "lightningDmg" } },
 }
 
--- 武器元素掉落权重 (品质越高越容易出非物理元素)
-Config.WEAPON_ELEMENT_WEIGHTS = {
-    [1] = { physical = 40, fire = 20, ice = 20, lightning = 20 },
-    [2] = { physical = 25, fire = 25, ice = 25, lightning = 25 },
-    [3] = { physical = 10, fire = 30, ice = 30, lightning = 30 },
-    [4] = { physical = 4,  fire = 32, ice = 32, lightning = 32 },
-    [5] = { physical = 0,  fire = 34, ice = 33, lightning = 33 },
-}
+-- (v4.0: WEAPON_ELEMENT_WEIGHTS 已移除)
 
 -- 元素增伤词条列表 (装备生成时随机选择一种)
 Config.ELEM_DMG_STATS = { "fireDmg", "iceDmg", "lightningDmg" }
@@ -893,7 +879,36 @@ for _, s in ipairs(Config.EQUIP_SETS) do
 end
 
 -- 当前章节可掉落的套装 (蓝品及以上, 50%概率带套装标签)
+-- v12: 普通掉落/锻造不再产出套装，以下常量仅供参考
 Config.SET_DROP_CHANCE = 0.5
+
+-- ============================================================================
+-- 套装秘境配置
+-- ============================================================================
+
+Config.SET_DUNGEON = {
+    UNLOCK_CHAPTER    = 5,      -- 解锁章节 (通关第5章)
+    MAX_DAILY_ATTEMPTS = 3,     -- 每日次数
+    FIGHT_DURATION     = 120,   -- 战斗时长 (秒)
+    MONSTER_SCALE      = 0.85,  -- 普通难度怪物缩放 (相对maxChapter末关)
+    HARD_MONSTER_SCALE = 1.20,  -- 困难难度怪物缩放
+    HARD_UNLOCK_CHAPTER = 9,    -- 困难难度解锁章节
+    ELITE_HP_MUL       = 3.0,   -- 精英怪HP倍率
+    SPAWN_COUNT        = 25,    -- 普通怪数量
+    ELITE_COUNT        = 3,     -- 精英怪数量
+
+    -- 品质掉落概率 [蓝, 紫, 橙] (qualityIdx = 3, 4, 5)
+    QUALITY_WEIGHTS_NORMAL = { 0.60, 0.35, 0.05 },
+    QUALITY_WEIGHTS_HARD   = { 0.30, 0.50, 0.20 },
+
+    -- 套装解锁批次 { minChapter, setIds }
+    UNLOCK_BATCHES = {
+        { minChapter = 5,  setIds = { "swift_hunter", "fission_force" } },
+        { minChapter = 9,  setIds = { "shadow_hunter", "iron_bastion" } },
+        { minChapter = 13, setIds = { "dragon_fury", "rune_weaver" } },
+        { minChapter = 13, setIds = { "lava_conqueror", "permafrost_heart" } },
+    },
+}
 
 -- (v3.0: 旧 Config.SKILLS 已移除, 技能定义统一走 SkillTreeConfig.lua)
 -- 向后兼容: 部分UI/存档代码可能引用 Config.SKILLS, 置空表
@@ -996,40 +1011,61 @@ Config.GOLD_ICON = "icon_gold_20260307034449.png"
 -- 排行榜图标
 Config.LEADERBOARD_ICON = "icon_leaderboard_20260307034600.png"
 
--- 技能图标路径 (v3.0: 新技能树图标, 复用已有资源)
+-- 技能图标路径 (v3.0: 新技能树图标)
 Config.SKILL_ICON_PATHS = {
     -- 通用 / 基础
     default                = "skill_elem_blast_20260307021441.png",             -- 默认技能图标
 
     -- 火焰系
-    fire_bolt              = "skill_elem_blast_20260307021441.png",             -- 火焰弹
+    fire_bolt              = "image/skill_fireball_20260410082151.png",          -- 火焰弹
     fireball               = "skill_fire_react_burn_20260309035341.png",        -- 火球术
+    incinerate             = "image/skill_incinerate_20260410114515.png",       -- 焚烧
+    firewall               = "image/skill_firewall_20260410165325.png",         -- 火墙
     fire_storm             = "skill_fire_storm_20260309035628.png",             -- 烈焰风暴
     meteor                 = "skill_arcane_meteor_20260309035727.png",          -- 陨石坠落
+    hydra                  = "image/skill_hydra_20260410114526.png",            -- 九头蛇
     fire_affinity          = "skill_fire_reaction_boost_20260309035339.png",    -- 火焰亲和
     burn_mastery           = "skill_fire_burn_spread_20260309035335.png",       -- 燃烧精通
     flame_shield           = "skill_fire_reaction_boost_20260309035339.png",    -- 烈焰护盾
     fire_mastery           = "skill_fire_storm_empower_20260309035626.png",     -- 火焰精通
+    kp_combustion          = "image/skill_kp_combustion_20260410115522.png",    -- 燃爆
 
     -- 冰霜系
-    frost_bolt             = "skill_frost_rain_20260307021555.png",             -- 寒冰箭
+    frost_bolt             = "image/skill_frost_bolt_20260410082331.png",       -- 冰霜弹
+    ice_shards             = "image/skill_ice_shard_20260410082141.png",        -- 冰碎片
+    frost_nova             = "image/skill_frost_nova_20260410114602.png",       -- 冰霜新星
+    frozen_orb             = "image/skill_frost_orb_20260410082117.png",        -- 冰封球
+    kp_avalanche           = "image/skill_avalanche_20260410082125.png",        -- 雪崩
+    kp_shatter             = "image/skill_shatter_20260410082121.png",          -- 碎冰
     frost_rain             = "skill_frost_rain_20260307021555.png",             -- 冰霜领域
     ice_barrage            = "skill_ice_barrage_20260309035625.png",            -- 冰晶弹幕
     blizzard               = "skill_ice_barrage_shatter_20260309035629.png",    -- 暴风雪
     ice_affinity           = "skill_ice_reaction_boost_20260309035337.png",     -- 冰霜亲和
     deep_freeze            = "skill_ice_barrage_freeze_20260309035633.png",     -- 深度冻结
-    ice_armor              = "skill_ice_reaction_boost_20260309035337.png",     -- 冰甲
+    ice_armor              = "image/skill_ice_armor_20260410114501.png",        -- 冰甲
     ice_mastery            = "skill_frost_power_20260307021552.png",            -- 冰霜精通
 
     -- 闪电系
-    spark                  = "skill_arcane_react_echo_20260309035443.png",      -- 电火花
+    spark                  = "image/skill_electric_spark_20260410082111.png",    -- 电花
+    arcane_strike          = "image/skill_arc_strike_20260410093623.png",       -- 电弧打击
+    charged_bolts          = "image/skill_charged_bolts_20260410114654.png",    -- 充能弹
     chain_lightning        = "skill_arcane_dual_catalyst_20260309035439.png",   -- 闪电链
+    lightning_spear        = "image/skill_lightning_spear_20260410114648.png",  -- 闪电矛
+    teleport               = "image/skill_teleport_20260410114759.png",         -- 传送
     thunderstorm           = "skill_fire_storm_afterburn_20260309035632.png",   -- 雷暴
+    thunder_storm          = "image/skill_thunder_storm_20260410114648.png",    -- 雷暴(别名)
     ball_lightning          = "skill_doom_cascade_20260309035730.png",           -- 球状闪电
+    energy_pulse           = "image/skill_energy_pulse_20260410114648.png",     -- 能量脉冲
     lightning_affinity     = "skill_arcane_reaction_boost_20260309035437.png",  -- 闪电亲和
     charged_strikes        = "skill_poison_stack_bonus_20260309035336.png",     -- 蓄电打击
     static_field           = "skill_water_deep_slow_20260309035435.png",       -- 静电力场
     lightning_mastery      = "skill_arcane_reaction_boost_20260309035437.png",  -- 闪电精通
+    kp_overcharge          = "image/skill_kp_overcharge_20260410115522.png",    -- 过载
+
+    -- 关键被动
+    kp_esu_blessing        = "image/skill_kp_esu_blessing_20260410115531.png",  -- 伊苏祝福
+    kp_align_elements      = "image/skill_kp_align_elements_20260410115614.png", -- 元素归一
+    kp_vyr_mastery         = "image/skill_kp_vyr_mastery_20260410115626.png",   -- 维尔精通
 }
 
 -- 重置属性/技能点消耗 (魂晶 = 已分配点数 × 单价)
@@ -1325,6 +1361,65 @@ Config.SOCKET_WEIGHTS = { 0.50, 0.39, 0.10, 0.01 }
 Config.PUNCH_COSTS = { 1, 2, 4 }
 
 -- CalcGemStat → ConfigCalc.lua
+
+-- ============================================================================
+-- 装备主属性系统 (固有属性, 不占词缀格)
+-- ============================================================================
+-- 每件装备根据槽位获得 1 条固定主属性
+-- 公式: mainStatValue = slotBase × (IP / 100)
+-- ring 槽随机 atk 或 hp (各 50%)
+Config.MAIN_STAT = {
+    weapon   = { id = "atk",     slotBase = 50  },
+    gloves   = { id = "atk",     slotBase = 20  },
+    boots    = { id = "def",     slotBase = 30  },
+    amulet   = { id = "hp",      slotBase = 800 },
+    ring     = {
+        { id = "atk", slotBase = 15  },
+        { id = "hp",  slotBase = 400 },
+    },
+    necklace = { id = "hpRegen", slotBase = 16  },
+}
+
+--- 获取指定槽位的主属性定义 (ring 随机选一个)
+---@param slotId string
+---@return table {id=string, slotBase=number}
+function Config.GetMainStatDef(slotId)
+    local def = Config.MAIN_STAT[slotId]
+    if not def then return nil end
+    -- ring 是数组 → 随机选
+    if def[1] then
+        return def[math.random(1, #def)]
+    end
+    return def
+end
+
+--- 计算主属性数值 (基础, 不含升级加成)
+---@param slotBase number
+---@param itemPower number
+---@return number
+function Config.CalcMainStatValue(slotBase, itemPower)
+    return slotBase * (itemPower / 100)
+end
+
+--- 计算主属性数值 (含升级加成)
+--- 公式: slotBase × (IP/100) + slotBase × upgradeLv × UPGRADE_MAIN_GROWTH
+---@param slotBase number
+---@param itemPower number
+---@param upgradeLv number
+---@return number
+function Config.CalcMainStatValueFull(slotBase, itemPower, upgradeLv)
+    local base = slotBase * (itemPower / 100)
+    local upgradeBonus = slotBase * (upgradeLv or 0) * Config.UPGRADE_MAIN_GROWTH
+    return base + upgradeBonus
+end
+
+--- 计算单条词缀的里程碑倍率
+--- @param milestoneCount number 该词缀被选中的里程碑次数
+--- @return number 倍率 (1.0 表示无加成)
+function Config.CalcAffixMilestoneMul(milestoneCount)
+    if not milestoneCount or milestoneCount <= 0 then return 1.0 end
+    return 1.0 + milestoneCount * Config.UPGRADE_AFFIX_MILESTONE_BONUS
+end
 
 -- 测试账号列表（排行榜中不予统计）
 Config.TEST_USER_IDS = {

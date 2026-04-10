@@ -11,11 +11,113 @@ function BuffRuntime.Install(GameState)
     local Config = require("Config")
     local ShieldManager = require("state.ShieldManager")
     local CombatUtils = require("battle.CombatUtils")
+    local BuffRegistry = require("state.BuffRegistry")
+    local DebuffApplier = require("state.DebuffApplier")
+
+    -- ========================================================================
+    -- DebuffApplier: 注册 10 个 debuff 施加配置
+    -- ========================================================================
+    -- 覆盖型 (5)
+    DebuffApplier.Register("slow", {
+        ccImmune = true, mode = "override",
+        valueField = "playerSlowRate", timerField = "playerSlowTimer",
+    })
+    DebuffApplier.Register("antiHeal", {
+        ccImmune = false, mode = "override",
+        valueField = "antiHealRate", timerField = "antiHealTimer",
+    })
+    DebuffApplier.Register("inkBlind", {
+        ccImmune = true, mode = "override",
+        valueField = "inkBlindRate", timerField = "inkBlindTimer",
+    })
+    DebuffApplier.Register("sandStorm", {
+        ccImmune = false, mode = "override",
+        valueField = "sandStormCritReduce", timerField = "sandStormTimer",
+    })
+    DebuffApplier.Register("sporeCloud", {
+        ccImmune = true, mode = "override",
+        valueField = "sporeCloudAtkSpdReduce", timerField = "sporeCloudTimer",
+    })
+    -- 叠层自增型 (3)
+    DebuffApplier.Register("corrosion", {
+        ccImmune = true, mode = "stack_inc",
+        valueField = "corrosionDefReduce", timerField = "corrosionTimer",
+        stackField = "corrosionStacks", maxStackField = "corrosionMaxStacks",
+    })
+    DebuffApplier.Register("venomStack", {
+        ccImmune = false, mode = "stack_inc",
+        valueField = "venomStackDmgPct", timerField = "venomStackTimer",
+        stackField = "venomStackCount", maxStackField = "venomStackMaxStacks",
+        minThreshold = 0.001,
+    })
+    DebuffApplier.Register("scorch", {
+        ccImmune = false, mode = "stack_inc",
+        valueField = "scorchDmgAmp", timerField = "scorchTimer",
+        stackField = "scorchStacks", maxStackField = "scorchMaxStacks",
+        minThreshold = 0.001,
+    })
+    -- 叠层加值型 (2)
+    DebuffApplier.Register("drench", {
+        ccImmune = false, mode = "stack_add",
+        timerField = "drenchTimer",
+        stackField = "drenchStacks", maxStackField = "drenchMaxStacks",
+        extraFields = { critPerStack = "drenchCritReduce", fireResPerStack = "drenchFireResReduce" },
+        thresholdParam = "critPerStack", minThreshold = 0.001,
+    })
+    DebuffApplier.Register("tidalCorrosion", {
+        ccImmune = false, mode = "stack_add",
+        timerField = "tidalCorrosionTimer",
+        stackField = "tidalCorrosionStacks", maxStackField = "tidalCorrosionMaxStacks",
+        extraFields = { dmgAmp = "tidalCorrosionDmgAmp" },
+        thresholdParam = "dmgAmp", minThreshold = 0.001,
+    })
 
     -- 注册护盾上限 = 最大生命值
     ShieldManager.SetMaxGetter(function()
         return GameState.GetMaxHP()
     end)
+
+    -- ========================================================================
+    -- BuffRegistry: 注册 19 个简单倒计时 buff（替代手动 if-block）
+    -- ========================================================================
+    BuffRegistry.Register({ id = "antiHeal", timerField = "antiHealTimer",
+        resetFields = { antiHealRate = 0, antiHealTimer = 0 } })
+    BuffRegistry.Register({ id = "slow", timerField = "playerSlowTimer",
+        resetFields = { playerSlowRate = 0, playerSlowTimer = 0 } })
+    BuffRegistry.Register({ id = "corrosion", timerField = "corrosionTimer",
+        resetFields = { corrosionStacks = 0, corrosionDefReduce = 0, corrosionTimer = 0, corrosionMaxStacks = 0 } })
+    BuffRegistry.Register({ id = "inkBlind", timerField = "inkBlindTimer",
+        resetFields = { inkBlindRate = 0, inkBlindTimer = 0 } })
+    BuffRegistry.Register({ id = "sandStorm", timerField = "sandStormTimer",
+        resetFields = { sandStormCritReduce = 0, sandStormTimer = 0 } })
+    BuffRegistry.Register({ id = "sporeCloud", timerField = "sporeCloudTimer",
+        resetFields = { sporeCloudAtkSpdReduce = 0, sporeCloudTimer = 0 } })
+    BuffRegistry.Register({ id = "scorch", timerField = "scorchTimer",
+        resetFields = { scorchStacks = 0, scorchDmgAmp = 0, scorchTimer = 0, scorchMaxStacks = 0 } })
+    BuffRegistry.Register({ id = "drench", timerField = "drenchTimer",
+        resetFields = { drenchStacks = 0, drenchCritReduce = 0, drenchFireResReduce = 0, drenchTimer = 0, drenchMaxStacks = 0 } })
+    BuffRegistry.Register({ id = "tidalCorrosion", timerField = "tidalCorrosionTimer",
+        resetFields = { tidalCorrosionStacks = 0, tidalCorrosionDmgAmp = 0, tidalCorrosionTimer = 0, tidalCorrosionMaxStacks = 0 } })
+    BuffRegistry.Register({ id = "attachedElement", timerField = "attachedElementTimer",
+        resetFields = { attachedElement = nil, attachedElementTimer = 0 } })
+    BuffRegistry.Register({ id = "flameShieldSpeed", timerField = "_flameShieldSpeedTimer",
+        resetFields = { _flameShieldSpeedTimer = 0 } })
+    BuffRegistry.Register({ id = "frostNovaSpeed", timerField = "_frostNovaSpeedTimer",
+        resetFields = { _frostNovaSpeedTimer = 0 } })
+    BuffRegistry.Register({ id = "arcaneStrikeAtkSpd", timerField = "_arcaneStrikeAtkSpdTimer",
+        resetFields = { _arcaneStrikeAtkSpdTimer = 0 } })
+    BuffRegistry.Register({ id = "teleportMystical", timerField = "_teleportMysticalTimer",
+        resetFields = { _teleportMysticalTimer = 0 } })
+    BuffRegistry.Register({ id = "teleportDmgReduce", timerField = "_teleportDmgReduceTimer",
+        resetFields = { _teleportDmgReduceTimer = 0 } })
+    BuffRegistry.Register({ id = "meteorSupreme", timerField = "_meteorSupremeTimer",
+        resetFields = { _meteorSupremeTimer = 0 } })
+    BuffRegistry.Register({ id = "thunderStormSupreme", timerField = "_thunderStormSupremeTimer",
+        resetFields = { _thunderStormSupremeTimer = 0 } })
+    BuffRegistry.Register({ id = "frozenOrbSpeed", timerField = "_frozenOrbSpeedTimer",
+        resetFields = { _frozenOrbSpeedTimer = 0 } })
+    BuffRegistry.Register({ id = "blizzard", timerField = "blizzardTimer",
+        resetFields = { blizzardActive = false, blizzardTimer = 0 } })
 
     -- ========================================================================
     -- 状态初始化 / 重置
@@ -30,26 +132,16 @@ function BuffRuntime.Install(GameState)
     --- 重置所有战斗 buff/debuff (ResetHP 调用)
     GameState.ResetBuffs = function()
         ShieldManager.Reset()
-        GameState.antiHealRate = 0
-        GameState.antiHealTimer = 0
-        GameState.playerSlowRate = 0
-        GameState.playerSlowTimer = 0
-        GameState.corrosionStacks = 0
-        GameState.corrosionDefReduce = 0
-        GameState.corrosionTimer = 0
-        GameState.corrosionMaxStacks = 0
-        GameState.inkBlindRate = 0
-        GameState.inkBlindTimer = 0
-        GameState.sandStormCritReduce = 0
-        GameState.sandStormTimer = 0
+        -- 批量重置 19 个已注册的简单 buff
+        BuffRegistry.ResetAll(GameState)
+        -- 以下为未注册的复杂 buff，需手动重置
+        -- 毒蛊 (有 tickCD 周期伤害)
         GameState.venomStackCount = 0
         GameState.venomStackDmgPct = 0
         GameState.venomStackTimer = 0
         GameState.venomStackMaxStacks = 0
         GameState.venomStackTickCD = 0
-        GameState.sporeCloudAtkSpdReduce = 0
-        GameState.sporeCloudTimer = 0
-        -- 灼烧 debuff (第15章: DoT + 攻速减, 叠层)
+        -- 灼烧 (有 tickCD 周期伤害)
         GameState.blazeStacks = 0
         GameState.blazeDmgPct = 0
         GameState.blazeAtkSpdReduce = 0
@@ -57,34 +149,14 @@ function BuffRuntime.Install(GameState)
         GameState.blazeTimer = 0
         GameState.blazeTickCD = 0
         GameState.blazeBossAtk = 0
-        -- 焚灼 debuff (第15章: 受伤增幅, 叠层)
-        GameState.scorchStacks = 0
-        GameState.scorchDmgAmp = 0
-        GameState.scorchMaxStacks = 0
-        GameState.scorchTimer = 0
-        -- 浸蚀 debuff (第16章: 暴击降低+火抗降低, 叠层)
-        GameState.drenchStacks = 0
-        GameState.drenchCritReduce = 0
-        GameState.drenchFireResReduce = 0
-        GameState.drenchMaxStacks = 0
-        GameState.drenchTimer = 0
-        -- 潮蚀 debuff (第16章: 水属性受伤增幅, 叠层)
-        GameState.tidalCorrosionStacks = 0
-        GameState.tidalCorrosionDmgAmp = 0
-        GameState.tidalCorrosionMaxStacks = 0
-        GameState.tidalCorrosionTimer = 0
-        -- 元素附着
-        GameState.attachedElement = nil
-        GameState.attachedElementTimer = 0
-        -- 寒冰甲状态
+        -- 寒冰甲 (护盾 + 多标志)
         GameState.shieldTimer = 0
         GameState.iceArmorActive = false
         GameState.iceArmorFrostbiteTimer = 0
         GameState.iceArmorManaSpent = 0
-        -- 暴风雪状态
-        GameState.blizzardActive = false
-        GameState.blizzardTimer = 0
-        -- 深度冻结 CC 免疫
+        -- 火焰护盾 (护盾 + 条件爆炸) — timer 由 Registry 重置，这里清附加标志
+        GameState._flameShieldMystical = false
+        -- 深度冻结 (周期产蓝 + 冰爆)
         GameState.ccImmune = false
         GameState.ccImmuneTimer = 0
         GameState._deepFreezeActive = false
@@ -145,132 +217,42 @@ function BuffRuntime.Install(GameState)
     -- ========================================================================
 
     --- 施加减速 debuff
-    --- @param slowRate number 减速比率 (0~1)
-    --- @param duration number 持续时间(秒)
     GameState.ApplySlowDebuff = function(slowRate, duration)
-        if GameState.playerDead then return end
-        if GameState.ccImmune then return end  -- 深度冻结免疫
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualSlow = slowRate * (1 - resist)
-        local actualDur  = duration * (1 - resist * durFactor)
-        if actualSlow < 0.01 then return end
-        if actualSlow > GameState.playerSlowRate or GameState.playerSlowTimer <= 0 then
-            GameState.playerSlowRate = actualSlow
-            GameState.playerSlowTimer = actualDur
-        end
+        DebuffApplier.Apply("slow", GameState, { value = slowRate, duration = duration })
     end
 
     --- 施加减疗 debuff
-    --- @param rate number 减疗比率
-    --- @param duration number 持续时间(秒)
     GameState.ApplyAntiHealDebuff = function(rate, duration)
-        if GameState.playerDead then return end
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualRate = rate * (1 - resist)
-        local actualDur  = duration * (1 - resist * durFactor)
-        if actualRate < 0.01 then return end
-        if actualRate > GameState.antiHealRate or GameState.antiHealTimer <= 0 then
-            GameState.antiHealRate = actualRate
-            GameState.antiHealTimer = actualDur
-        end
+        DebuffApplier.Apply("antiHeal", GameState, { value = rate, duration = duration })
     end
 
     --- 施加腐蚀 debuff (叠加制, 降低DEF)
-    --- @param defReducePct number 每层DEF降低比率
-    --- @param maxStacks number 最大层数
-    --- @param duration number 持续时间(秒)
     GameState.ApplyCorrosionDebuff = function(defReducePct, maxStacks, duration)
-        if GameState.playerDead then return end
-        if GameState.ccImmune then return end  -- 深度冻结免疫
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualReduce = defReducePct * (1 - resist)
-        local actualDur    = duration * (1 - resist * durFactor)
-        GameState.corrosionDefReduce = actualReduce
-        GameState.corrosionMaxStacks = maxStacks
-        GameState.corrosionTimer = actualDur
-        if GameState.corrosionStacks < maxStacks then
-            GameState.corrosionStacks = GameState.corrosionStacks + 1
-        end
+        DebuffApplier.Apply("corrosion", GameState, { value = defReducePct, maxStacks = maxStacks, duration = duration })
     end
 
     --- 施加墨汁致盲 debuff (降低ATK)
-    --- @param atkReducePct number ATK降低比率
-    --- @param duration number 持续时间(秒)
     GameState.ApplyInkBlindDebuff = function(atkReducePct, duration)
-        if GameState.playerDead then return end
-        if GameState.ccImmune then return end  -- 深度冻结免疫
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualReduce = atkReducePct * (1 - resist)
-        local actualDur    = duration * (1 - resist * durFactor)
-        if actualReduce < 0.01 then return end
-        if actualReduce > GameState.inkBlindRate or GameState.inkBlindTimer <= 0 then
-            GameState.inkBlindRate = actualReduce
-            GameState.inkBlindTimer = actualDur
-        end
+        DebuffApplier.Apply("inkBlind", GameState, { value = atkReducePct, duration = duration })
     end
 
     --- 施加沙暴 debuff (降低暴击率)
-    --- @param critReducePct number 暴击率降低值
-    --- @param duration number 持续时间(秒)
     GameState.ApplySandStormDebuff = function(critReducePct, duration)
-        if GameState.playerDead then return end
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualReduce = critReducePct * (1 - resist)
-        local actualDur    = duration * (1 - resist * durFactor)
-        if actualReduce < 0.01 then return end
-        if actualReduce > GameState.sandStormCritReduce or GameState.sandStormTimer <= 0 then
-            GameState.sandStormCritReduce = actualReduce
-            GameState.sandStormTimer = actualDur
-        end
+        DebuffApplier.Apply("sandStorm", GameState, { value = critReducePct, duration = duration })
     end
 
     --- 施加毒蛊叠加 debuff (每层按%maxHP每秒持续伤害)
-    --- @param dmgPctPerStack number 每层每秒伤害(%maxHP)
-    --- @param maxStacks number 最大叠加层数
-    --- @param duration number 持续时间(秒)
     GameState.ApplyVenomStackDebuff = function(dmgPctPerStack, maxStacks, duration)
-        if GameState.playerDead then return end
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualDmgPct = dmgPctPerStack * (1 - resist)
-        local actualDur    = duration * (1 - resist * durFactor)
-        if actualDmgPct < 0.001 then return end
-        GameState.venomStackDmgPct = actualDmgPct
-        GameState.venomStackMaxStacks = maxStacks
-        GameState.venomStackTimer = actualDur
-        if GameState.venomStackCount < maxStacks then
-            GameState.venomStackCount = GameState.venomStackCount + 1
-        end
+        DebuffApplier.Apply("venomStack", GameState, { value = dmgPctPerStack, maxStacks = maxStacks, duration = duration })
     end
 
     --- 施加孢子云 debuff (降低攻速)
-    --- @param atkSpeedReducePct number 攻速降低比率
-    --- @param duration number 持续时间(秒)
     GameState.ApplySporeCloudDebuff = function(atkSpeedReducePct, duration)
-        if GameState.playerDead then return end
-        if GameState.ccImmune then return end  -- 深度冻结免疫
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualReduce = atkSpeedReducePct * (1 - resist)
-        local actualDur    = duration * (1 - resist * durFactor)
-        if actualReduce < 0.01 then return end
-        if actualReduce > GameState.sporeCloudAtkSpdReduce or GameState.sporeCloudTimer <= 0 then
-            GameState.sporeCloudAtkSpdReduce = actualReduce
-            GameState.sporeCloudTimer = actualDur
-        end
+        DebuffApplier.Apply("sporeCloud", GameState, { value = atkSpeedReducePct, duration = duration })
     end
 
     --- 施加灼烧 debuff (叠加制, 每层DoT + 攻速降低) (第15章)
-    --- @param dmgPct number 每层每秒伤害(%bossATK)
-    --- @param atkSpdReduce number 每层攻速降低比率
-    --- @param maxStacks number 最大叠加层数
-    --- @param duration number 持续时间(秒)
-    --- @param bossAtk number|nil Boss ATK快照
+    --- 保留手动实现: 5参数 + bossAtk快照 + 双阈值判断
     GameState.ApplyBlazeDebuff = function(dmgPct, atkSpdReduce, maxStacks, duration, bossAtk)
         if GameState.playerDead then return end
         local resist = GameState.GetDebuffResist()
@@ -291,62 +273,25 @@ function BuffRuntime.Install(GameState)
         end
     end
 
-    --- 施加焚灼 debuff (叠加制, 每层增加受到伤害%) (第15章)
-    --- @param dmgAmpPct number 每层受伤增幅比率
-    --- @param maxStacks number 最大叠加层数
-    --- @param duration number 持续时间(秒)
+    --- 施加焚灼 debuff (叠加制, 每层增加受到伤害%)
     GameState.ApplyScorchDebuff = function(dmgAmpPct, maxStacks, duration)
-        if GameState.playerDead then return end
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualAmp = dmgAmpPct * (1 - resist)
-        local actualDur = duration * (1 - resist * durFactor)
-        if actualAmp < 0.001 then return end
-        GameState.scorchDmgAmp = actualAmp
-        GameState.scorchMaxStacks = maxStacks
-        GameState.scorchTimer = actualDur
-        if GameState.scorchStacks < maxStacks then
-            GameState.scorchStacks = GameState.scorchStacks + 1
-        end
+        DebuffApplier.Apply("scorch", GameState, { value = dmgAmpPct, maxStacks = maxStacks, duration = duration })
     end
 
-    --- 施加浸蚀 debuff (叠加制, 每层: 暴击-2.5% + 火抗-4%) (第16章)
-    --- @param stacksToAdd number 本次叠加层数
-    --- @param maxStacks number 最大叠加层数
-    --- @param duration number 持续时间(秒)
+    --- 施加浸蚀 debuff (叠加制, 每层: 暴击-2.5% + 火抗-4%)
     GameState.ApplyDrenchDebuff = function(stacksToAdd, maxStacks, duration)
-        if GameState.playerDead then return end
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualDur = duration * (1 - resist * durFactor)
-        -- 每层效果常量 (经韧性衰减)
-        local critPerStack = 0.025 * (1 - resist)
-        local fireResPerStack = 0.04 * (1 - resist)
-        if critPerStack < 0.001 then return end
-        GameState.drenchCritReduce = critPerStack
-        GameState.drenchFireResReduce = fireResPerStack
-        GameState.drenchMaxStacks = maxStacks
-        GameState.drenchTimer = actualDur
-        local newStacks = math.min(GameState.drenchStacks + stacksToAdd, maxStacks)
-        GameState.drenchStacks = newStacks
+        DebuffApplier.Apply("drench", GameState, {
+            duration = duration, maxStacks = maxStacks, stacksToAdd = stacksToAdd,
+            critPerStack = 0.025, fireResPerStack = 0.04,
+        })
     end
 
-    --- 施加潮蚀 debuff (叠加制, 每层: 水属性受伤+3.5%) (第16章)
-    --- @param stacksToAdd number 本次叠加层数
-    --- @param maxStacks number 最大叠加层数
-    --- @param duration number 持续时间(秒)
+    --- 施加潮蚀 debuff (叠加制, 每层: 水属性受伤+3.5%)
     GameState.ApplyTidalCorrosionDebuff = function(stacksToAdd, maxStacks, duration)
-        if GameState.playerDead then return end
-        local resist = GameState.GetDebuffResist()
-        local durFactor = Config.TENACITY.durFactor
-        local actualAmp = 0.035 * (1 - resist)
-        local actualDur = duration * (1 - resist * durFactor)
-        if actualAmp < 0.001 then return end
-        GameState.tidalCorrosionDmgAmp = actualAmp
-        GameState.tidalCorrosionMaxStacks = maxStacks
-        GameState.tidalCorrosionTimer = actualDur
-        local newStacks = math.min(GameState.tidalCorrosionStacks + stacksToAdd, maxStacks)
-        GameState.tidalCorrosionStacks = newStacks
+        DebuffApplier.Apply("tidalCorrosion", GameState, {
+            duration = duration, maxStacks = maxStacks, stacksToAdd = stacksToAdd,
+            dmgAmp = 0.035,
+        })
     end
 
     -- ========================================================================
@@ -354,49 +299,14 @@ function BuffRuntime.Install(GameState)
     -- ========================================================================
 
     --- 每帧更新 debuff 计时器
-    GameState.UpdateDebuffs = function(dt)
-        -- 减疗 debuff
-        if GameState.antiHealTimer > 0 then
-            GameState.antiHealTimer = GameState.antiHealTimer - dt
-            if GameState.antiHealTimer <= 0 then
-                GameState.antiHealRate = 0
-                GameState.antiHealTimer = 0
-            end
-        end
-        -- 减速 debuff
-        if GameState.playerSlowTimer > 0 then
-            GameState.playerSlowTimer = GameState.playerSlowTimer - dt
-            if GameState.playerSlowTimer <= 0 then
-                GameState.playerSlowRate = 0
-                GameState.playerSlowTimer = 0
-            end
-        end
-        -- 腐蚀 debuff
-        if GameState.corrosionTimer > 0 then
-            GameState.corrosionTimer = GameState.corrosionTimer - dt
-            if GameState.corrosionTimer <= 0 then
-                GameState.corrosionStacks = 0
-                GameState.corrosionDefReduce = 0
-                GameState.corrosionTimer = 0
-                GameState.corrosionMaxStacks = 0
-            end
-        end
-        -- 墨汁致盲 debuff
-        if GameState.inkBlindTimer > 0 then
-            GameState.inkBlindTimer = GameState.inkBlindTimer - dt
-            if GameState.inkBlindTimer <= 0 then
-                GameState.inkBlindRate = 0
-                GameState.inkBlindTimer = 0
-            end
-        end
-        -- 沙暴 debuff
-        if GameState.sandStormTimer > 0 then
-            GameState.sandStormTimer = GameState.sandStormTimer - dt
-            if GameState.sandStormTimer <= 0 then
-                GameState.sandStormCritReduce = 0
-                GameState.sandStormTimer = 0
-            end
-        end
+    GameState.UpdateDebuffs = function(dt, bs)
+        -- BuffRegistry 统一处理 19 个简单倒计时 buff
+        BuffRegistry.Update(dt, GameState, bs)
+
+        -- ================================================================
+        -- 以下为复杂 buff（含周期伤害/子系统交互），需手动处理
+        -- ================================================================
+
         -- 毒蛊叠加 debuff
         if GameState.venomStackTimer > 0 and GameState.venomStackCount > 0 then
             GameState.venomStackTimer = GameState.venomStackTimer - dt
@@ -416,14 +326,6 @@ function BuffRuntime.Install(GameState)
                         GameState.DamagePlayer(venomDmg)
                     end
                 end
-            end
-        end
-        -- 孢子云 debuff
-        if GameState.sporeCloudTimer > 0 then
-            GameState.sporeCloudTimer = GameState.sporeCloudTimer - dt
-            if GameState.sporeCloudTimer <= 0 then
-                GameState.sporeCloudAtkSpdReduce = 0
-                GameState.sporeCloudTimer = 0
             end
         end
         -- 灼烧 debuff (第15章)
@@ -448,45 +350,6 @@ function BuffRuntime.Install(GameState)
                 end
             end
         end
-        -- 焚灼 debuff (第15章)
-        if GameState.scorchTimer > 0 and GameState.scorchStacks > 0 then
-            GameState.scorchTimer = GameState.scorchTimer - dt
-            if GameState.scorchTimer <= 0 then
-                GameState.scorchStacks = 0
-                GameState.scorchDmgAmp = 0
-                GameState.scorchTimer = 0
-                GameState.scorchMaxStacks = 0
-            end
-        end
-        -- 浸蚀 debuff (第16章)
-        if GameState.drenchTimer > 0 and GameState.drenchStacks > 0 then
-            GameState.drenchTimer = GameState.drenchTimer - dt
-            if GameState.drenchTimer <= 0 then
-                GameState.drenchStacks = 0
-                GameState.drenchCritReduce = 0
-                GameState.drenchFireResReduce = 0
-                GameState.drenchTimer = 0
-                GameState.drenchMaxStacks = 0
-            end
-        end
-        -- 潮蚀 debuff (第16章)
-        if GameState.tidalCorrosionTimer > 0 and GameState.tidalCorrosionStacks > 0 then
-            GameState.tidalCorrosionTimer = GameState.tidalCorrosionTimer - dt
-            if GameState.tidalCorrosionTimer <= 0 then
-                GameState.tidalCorrosionStacks = 0
-                GameState.tidalCorrosionDmgAmp = 0
-                GameState.tidalCorrosionTimer = 0
-                GameState.tidalCorrosionMaxStacks = 0
-            end
-        end
-        -- 元素附着衰减
-        if GameState.attachedElementTimer > 0 then
-            GameState.attachedElementTimer = GameState.attachedElementTimer - dt
-            if GameState.attachedElementTimer <= 0 then
-                GameState.attachedElement = nil
-                GameState.attachedElementTimer = 0
-            end
-        end
         -- 寒冰甲屏障持续时间
         if GameState.shieldTimer > 0 then
             GameState.shieldTimer = GameState.shieldTimer - dt
@@ -504,18 +367,40 @@ function BuffRuntime.Install(GameState)
             if GameState.flameShieldTimer <= 0 then
                 GameState.flameShieldTimer = 0
                 ShieldManager.Remove("flame_shield")
-            end
-        end
-        -- 暴风雪持续时间
-        if GameState.blizzardTimer and GameState.blizzardTimer > 0 then
-            GameState.blizzardTimer = GameState.blizzardTimer - dt
-            if GameState.blizzardTimer <= 0 then
-                GameState.blizzardTimer = 0
-                GameState.blizzardActive = false
+                -- 神秘火焰护盾: 结束时释放火焰爆炸
+                if GameState._flameShieldMystical and bs then
+                    local p = bs.playerBattle
+                    if p then
+                        local H = require("battle.skills.Helpers")
+                        local CU = require("battle.CombatUtils")
+                        for _, e in ipairs(bs.enemies) do
+                            if not e.dead then
+                                local dx, dy = e.x - p.x, e.y - p.y
+                                if math.sqrt(dx * dx + dy * dy) <= 100 then
+                                    H.HitEnemySkill(bs, e, 0.60, "fire", {}, p.x, p.y, CU.KNOCKBACK_SKILL)
+                                end
+                            end
+                        end
+                        table.insert(bs.skillEffects, {
+                            type = "flame_shield_explode", x = p.x, y = p.y,
+                            radius = 100, life = 0.4, maxLife = 0.4,
+                        })
+                    end
+                end
+                GameState._flameShieldMystical = false
             end
         end
         -- 深度冻结 CC 免疫计时
         if GameState.ccImmuneTimer > 0 then
+            -- 至尊深度冻结: 每2秒生成10点法力
+            if GameState._deepFreezeActive and GameState._deepFreezeSupreme then
+                GameState._deepFreezeManaTick = (GameState._deepFreezeManaTick or 0) + dt
+                if GameState._deepFreezeManaTick >= 2.0 then
+                    GameState._deepFreezeManaTick = GameState._deepFreezeManaTick - 2.0
+                    local maxMana = GameState.GetMaxMana()
+                    GameState.playerMana = math.min(maxMana, GameState.playerMana + 10)
+                end
+            end
             GameState.ccImmuneTimer = GameState.ccImmuneTimer - dt
             if GameState.ccImmuneTimer <= 0 then
                 GameState.ccImmune = false
@@ -523,9 +408,9 @@ function BuffRuntime.Install(GameState)
                 -- 深度冻结到期: 结束爆炸
                 if GameState._deepFreezeActive then
                     GameState._deepFreezeActive = false
-                    local bs = GameState._deepFreezeBs
-                    local p = bs and bs.playerBattle
-                    if bs and p then
+                    local dfBs = GameState._deepFreezeBs
+                    local p = dfBs and dfBs.playerBattle
+                    if dfBs and p then
                         local px, py = p.x, p.y
                         local burstPct = GameState._deepFreezeBurstPct
                         local radius = GameState._deepFreezeRadius
@@ -534,13 +419,13 @@ function BuffRuntime.Install(GameState)
                         local DamageFormula = require("battle.DamageFormula")
                         local H = require("battle.skills.Helpers")
                         local Particles = require("battle.Particles")
-                        for _, e in ipairs(bs.enemies) do
+                        for _, e in ipairs(dfBs.enemies) do
                             if not e.dead then
                                 local dx, dy = e.x - px, e.y - py
                                 if math.sqrt(dx * dx + dy * dy) <= radius then
                                     local ctx = DamageFormula.BuildContext({
                                         target    = e,
-                                        bs        = bs,
+                                        bs        = dfBs,
                                         baseDmg   = burstDmg,
                                         damageTag = "skill",
                                         element   = "ice",
@@ -548,16 +433,16 @@ function BuffRuntime.Install(GameState)
                                     local finalDmg = DamageFormula.Calculate(ctx)
                                     local EnemySys = require("battle.EnemySystem")
                                     finalDmg = EnemySys.ApplyDamageReduction(e, finalDmg)
-                                    EnemySys.ApplyDamage(e, finalDmg, bs)
+                                    EnemySys.ApplyDamage(e, finalDmg, dfBs)
                                     GameState.LifeStealHeal(finalDmg, Config.LIFESTEAL.efficiency.fireZone)
-                                    Particles.SpawnDmgText(bs.particles, e.x, e.y - 10, finalDmg, false, false, { 100, 200, 255 })
+                                    Particles.SpawnDmgText(dfBs.particles, e.x, e.y - 10, finalDmg, false, false, { 100, 200, 255 })
                                 end
                             end
                         end
                         -- 爆炸视觉效果
-                        CombatUtils.TriggerShake(bs, CombatUtils.SHAKE_BLAST)
+                        CombatUtils.TriggerShake(dfBs, CombatUtils.SHAKE_BLAST)
                         CombatUtils.PlaySfx("frostImpact", 0.8)
-                        table.insert(bs.skillEffects, {
+                        table.insert(dfBs.skillEffects, {
                             type = "deep_freeze_burst",
                             x = px, y = py,
                             radius = radius,
@@ -739,11 +624,11 @@ function BuffRuntime.Install(GameState)
         conditionFn = function() return (GameState.inkBlindTimer or 0) > 0 end,
     })
 
-    -- ---- AtkSpeed 修饰器 ----
+    -- ---- AtkSpd2 修饰器 (第二类: 触发/临时攻速) ----
 
     -- 迅捷猎手6件: 连击风暴攻速 (延迟加载BuffManager)
     SM.Register({
-        id = "set_swiftHunter_spd", stat = "atkSpeed", type = "pctMul",
+        id = "set_swiftHunter_spd", stat = "atkSpd2", type = "flatAdd",
         valueFn = function()
             local ok, BM = pcall(require, "battle.BuffManager")
             if ok and BM.GetSwiftHunterAtkSpeedBonus then
@@ -755,7 +640,7 @@ function BuffRuntime.Install(GameState)
 
     -- 裂变之力6件: 脉冲后攻速 (延迟加载BuffManager)
     SM.Register({
-        id = "set_fissionForce_spd", stat = "atkSpeed", type = "pctMul",
+        id = "set_fissionForce_spd", stat = "atkSpd2", type = "flatAdd",
         valueFn = function()
             local ok, BM = pcall(require, "battle.BuffManager")
             if ok and BM.GetFissionForceAtkSpeedBonus then
@@ -765,23 +650,23 @@ function BuffRuntime.Install(GameState)
         end,
     })
 
-    -- 减速debuff: x(1-slowRate)
+    -- 减速debuff: 减少第二类攻速
     SM.Register({
-        id = "debuff_slow", stat = "atkSpeed", type = "pctReduce",
+        id = "debuff_slow", stat = "atkSpd2", type = "flatSub",
         valueFn = function() return GameState.playerSlowRate or 0 end,
         conditionFn = function() return (GameState.playerSlowTimer or 0) > 0 end,
     })
 
-    -- 孢子云debuff: x(1-reduce)
+    -- 孢子云debuff: 减少第二类攻速
     SM.Register({
-        id = "debuff_sporeCloud", stat = "atkSpeed", type = "pctReduce",
+        id = "debuff_sporeCloud", stat = "atkSpd2", type = "flatSub",
         valueFn = function() return GameState.sporeCloudAtkSpdReduce or 0 end,
         conditionFn = function() return (GameState.sporeCloudTimer or 0) > 0 end,
     })
 
     -- 灼烧debuff: 叠层×每层攻速降低
     SM.Register({
-        id = "debuff_blaze_spd", stat = "atkSpeed", type = "pctReduce",
+        id = "debuff_blaze_spd", stat = "atkSpd2", type = "flatSub",
         valueFn = function()
             return (GameState.blazeStacks or 0) * (GameState.blazeAtkSpdReduce or 0)
         end,

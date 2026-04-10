@@ -8,7 +8,7 @@ local CombatUtils = {}
 -- 常量
 -- ============================================================================
 
-CombatUtils.KNOCKBACK_SPEED  = 0    -- 默认无击退
+CombatUtils.KNOCKBACK_SPEED  = 0    -- 全局击退基础速度 (默认关闭，仅特定技能使用)
 CombatUtils.KNOCKBACK_CRIT   = 1.6
 CombatUtils.KNOCKBACK_SKILL  = 1.3
 CombatUtils.KNOCKBACK_DECAY  = 8.0
@@ -35,6 +35,24 @@ local SFX = {
     frostWarn    = "audio/sfx/sfx_frost_warn.ogg",
     frostImpact  = "audio/sfx/sfx_frost_impact.ogg",
     enemyDie     = "audio/sfx/sfx_enemy_die.ogg",
+    fireBolt     = "audio/sfx/sfx_fire_bolt.ogg",
+    frostBolt    = "audio/sfx/sfx_frost_bolt.ogg",
+    spark        = "audio/sfx/sfx_spark.ogg",
+    arcaneStrike = "audio/sfx/sfx_arcane_strike.ogg",
+    -- 新增技能专属音效
+    incinerate     = "audio/sfx/sfx_incinerate.ogg",
+    firewall       = "audio/sfx/sfx_firewall.ogg",
+    hydra          = "audio/sfx/sfx_hydra.ogg",
+    fireballCast   = "audio/sfx/sfx_fireball_cast.ogg",
+    frostNova      = "audio/sfx/sfx_frost_nova.ogg",
+    iceArmor       = "audio/sfx/sfx_ice_armor.ogg",
+    frozenOrb      = "audio/sfx/sfx_frozen_orb.ogg",
+    chargedBolts   = "audio/sfx/sfx_charged_bolts.ogg",
+    chainLightning = "audio/sfx/sfx_chain_lightning.ogg",
+    lightningSpear = "audio/sfx/sfx_lightning_spear.ogg",
+    teleport       = "audio/sfx/sfx_teleport.ogg",
+    thunderStorm   = "audio/sfx/sfx_thunder_storm.ogg",
+    energyPulse    = "audio/sfx/sfx_energy_pulse.ogg",
 }
 
 function CombatUtils.InitAudio()

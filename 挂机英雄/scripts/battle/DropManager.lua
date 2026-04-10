@@ -85,81 +85,16 @@ local DROP_RULES = {
         end,
     },
 
-    -- 4) 魂晶 (仅Boss, 每4章+1)
+    -- 4) 魂晶 (仅Boss, 固定数量)
     {
         id = "soulCrystal",
         condition = function(ctx) return ctx.enemy.isBoss end,
         execute = function(ctx)
-            local amount = Config.SOUL_CRYSTAL.dropPerBoss + math.floor((ctx.chapter - 1) / 4)
+            local amount = Config.SOUL_CRYSTAL.dropPerBoss
             Loot.Spawn(ctx.bs.loots,
                 ctx.enemy.x + math.random(-10, 10),
                 ctx.enemy.y + math.random(-10, 10),
                 "soulCrystal", amount, Config.SOUL_CRYSTAL.color)
-        end,
-    },
-
-    -- 5) 属性重置券 (仅Boss, 万分之一)
-    {
-        id = "attr_reset_ticket",
-        condition = function(ctx)
-            return ctx.enemy.isBoss and math.random(1, 10000) == 1
-        end,
-        execute = function(ctx)
-            Loot.Spawn(ctx.bs.loots,
-                ctx.enemy.x + math.random(-12, 12),
-                ctx.enemy.y + math.random(-12, 12),
-                "bagItem", 1, { 255, 200, 80 }, { itemId = "attr_reset" })
-        end,
-    },
-
-    -- 6) 技能重置券 (仅Boss, 万分之一)
-    {
-        id = "skill_reset_ticket",
-        condition = function(ctx)
-            return ctx.enemy.isBoss and math.random(1, 10000) == 1
-        end,
-        execute = function(ctx)
-            Loot.Spawn(ctx.bs.loots,
-                ctx.enemy.x + math.random(-12, 12),
-                ctx.enemy.y + math.random(-12, 12),
-                "bagItem", 1, { 180, 100, 255 }, { itemId = "skill_reset" })
-        end,
-    },
-
-    -- 7) 散光棱镜 (仅Boss, 按章节缩放 1%~4%)
-    {
-        id = "prism",
-        condition = function(ctx)
-            if not ctx.enemy.isBoss then return false end
-            -- 章节1→1%, 章节16→4%, 线性插值
-            local chance = 0.01 + (ctx.chapter - 1) * (0.03 / 15)
-            return math.random() < chance
-        end,
-        execute = function(ctx)
-            Loot.Spawn(ctx.bs.loots,
-                ctx.enemy.x + math.random(-12, 12),
-                ctx.enemy.y + math.random(-12, 12),
-                "bagItem", 1, { 200, 180, 255 }, { itemId = "prism" })
-        end,
-    },
-
-    -- 8) 魔法石 (仅Boss, S10=1%, S5≈0.7%)
-    {
-        id = "magic_stone",
-        condition = function(ctx)
-            if not ctx.enemy.isBoss then return false end
-            local dropN = (ctx.stageIdx == 10) and Config.MAGIC_STONE_DROP.s10 or Config.MAGIC_STONE_DROP.s5
-            return math.random(1, dropN) == 1
-        end,
-        execute = function(ctx)
-            local stoneId = "magic_stone:" .. ctx.chapter
-            local stoneCfg = Config.ITEM_MAP[stoneId]
-            if stoneCfg then
-                Loot.Spawn(ctx.bs.loots,
-                    ctx.enemy.x + math.random(-12, 12),
-                    ctx.enemy.y + math.random(-12, 12),
-                    "bagItem", 1, stoneCfg.color, { itemId = stoneId })
-            end
         end,
     },
 }

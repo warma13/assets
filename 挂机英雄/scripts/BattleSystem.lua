@@ -144,12 +144,16 @@ function BattleSystem.Init(areaWidth, areaHeight)
     BattleSystem.trialEnded = false
     BattleSystem.worldBossEnded = false
     BattleSystem.resourceDungeonEnded = false
+    BattleSystem.setDungeonEnded = false
 
     BattleSystem._waveComplete = false
     BattleSystem._restTimer    = 0
 
     GameState.ResetHP()
     GameState.ResetMana()
+    GameState._sparkCritStacks = 0
+    GameState._arcaneStrikeAtkSpdTimer = 0
+    GameState._arcaneStrikeCastCount = 0
 
     Spawner.Reset()
     GameState.stage.waveIdx = 1
@@ -279,6 +283,7 @@ function BattleSystem.Update(dt)
     if bs.trialEnded then return end
     if bs.worldBossEnded then return end
     if bs.resourceDungeonEnded then return end
+    if bs.setDungeonEnded then return end
 
     bs.time = bs.time + dt
     bs.pickupRadius = GameState.player.pickupRadius
@@ -380,7 +385,7 @@ function BattleSystem.Update(dt)
     GameState.UpdateLifeStealTimer(dt)
     GameState.TickHPRegen(dt)
     GameState.TickManaRegen(dt)
-    GameState.UpdateDebuffs(dt)
+    GameState.UpdateDebuffs(dt, bs)
 
     -- 受击闪烁衰减
     if bs.playerHitFlash and bs.playerHitFlash > 0 then
@@ -388,6 +393,11 @@ function BattleSystem.Update(dt)
     end
 
     Spawner.Update(dt, bs.enemies, bs.areaW, bs.areaH)
+
+    -- 引导系统更新 (在 PlayerAI 之前, 以便引导段伤害先结算)
+    local ChannelSystem = require("battle.ChannelSystem")
+    ChannelSystem.Update(dt)
+
     PlayerAI.Update(dt, bs.playerBattle, bs.enemies, bs.areaW, bs.areaH, function(idx)
         BattleSystem.PlayerAttack(idx)
     end, bs)

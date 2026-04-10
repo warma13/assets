@@ -117,7 +117,7 @@ function Leaderboard.Show()
                                 backgroundColor = { 60, 100, 180, 230 },
                                 onClick = function() Leaderboard.LoadRank(KEY_POWER) end,
                                 children = {
-                                    UI.Label { id = "lb_tab_power_lbl", text = "最高战力", fontSize = 10, fontColor = { 255, 255, 255, 255 } },
+                                    UI.Label { id = "lb_tab_power_lbl", text = "最高IP", fontSize = 10, fontColor = { 255, 255, 255, 255 } },
                                 },
                             },
                             UI.Panel {
@@ -180,7 +180,7 @@ function Leaderboard.Show()
         overlayRoot_:AddChild(overlay_)
     end
 
-    -- 默认加载战力排行榜
+    -- 默认加载IP排行榜
     Leaderboard.LoadRank(KEY_POWER)
 end
 
@@ -234,7 +234,7 @@ function Leaderboard.LoadRank(rankKey)
             children = {
                 UI.Label { text = "#", width = 24, fontSize = 10, fontColor = Colors.textDim },
                 UI.Label { text = "玩家", flexGrow = 1, flexBasis = 0, fontSize = 10, fontColor = Colors.textDim },
-                UI.Label { text = rankKey == KEY_POWER and "战力" or (rankKey == KEY_TRIAL and "最高层" or "关卡"), width = 72, fontSize = 10, fontColor = Colors.textDim, textAlign = "right" },
+                UI.Label { text = rankKey == KEY_POWER and "IP" or (rankKey == KEY_TRIAL and "最高层" or "关卡"), width = 72, fontSize = 10, fontColor = Colors.textDim, textAlign = "right" },
             },
         })
     end

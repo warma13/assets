@@ -65,7 +65,9 @@ function StageSelect.Build()
 
     -- 关卡按钮列表 (两列网格)
     local stageButtons = {}
-    for i, stageCfg in ipairs(ch.stages) do
+    local stageCount = StageConfig.GetStageCount(viewChapter_)
+    for i = 1, stageCount do
+        local stageCfg = StageConfig.GetStage(viewChapter_, i)
         local isCurrent = (viewChapter_ == curChapter and i == curStage)
         -- 已解锁: 在历史最高记录范围内
         local isUnlocked = (viewChapter_ < maxCh) or (viewChapter_ == maxCh and i <= maxSt)
@@ -126,9 +128,7 @@ function StageSelect.Build()
         })
     end
 
-    -- 章节切换箭头
-    local canPrev = viewChapter_ > 1
-    local canNext = viewChapter_ < totalChapters
+    -- 章节切换已禁用，只显示当前章节
 
     overlay_ = UI.Panel {
         position = "absolute",
@@ -150,7 +150,7 @@ function StageSelect.Build()
                     UI.Panel {
                         width = "100%", height = "100%",
                         flexDirection = "column",
-                        backgroundImage = "Textures/stage_map_bg_ch" .. viewChapter_ .. ".png",
+                        backgroundImage = "Textures/stage_map_bg_ch" .. ((viewChapter_ - 1) % 17 + 1) .. ".png",
                         backgroundFit = "cover",
                         children = {
                             -- 半透明遮罩让文字可读
@@ -159,47 +159,18 @@ function StageSelect.Build()
                                 flexDirection = "column",
                                 backgroundColor = { 10, 12, 20, 180 },
                                 children = {
-                                    -- 标题栏
+                                    -- 标题栏（仅显示当前章节，无切换箭头）
                                     UI.Panel {
                                         width = "100%", height = 44,
-                                        flexDirection = "row", alignItems = "center", justifyContent = "space-between",
+                                        flexDirection = "row", alignItems = "center", justifyContent = "center",
                                         paddingHorizontal = 12,
                                         backgroundColor = { 20, 24, 38, 220 },
                                         borderBottomWidth = 1, borderBottomColor = { 80, 70, 50, 150 },
                                         children = {
-                                            -- 左箭头
-                                            UI.Panel {
-                                                width = 32, height = 32,
-                                                alignItems = "center", justifyContent = "center",
-                                                backgroundColor = canPrev and { 60, 65, 80, 200 } or { 40, 40, 50, 100 },
-                                                borderRadius = 16,
-                                                onClick = canPrev and function()
-                                                    viewChapter_ = viewChapter_ - 1
-                                                    StageSelect.Build()
-                                                end or nil,
-                                                children = {
-                                                    UI.Label { text = "<", fontSize = 16, fontColor = { 255, 255, 255, canPrev and 230 or 60 } },
-                                                },
-                                            },
-                                            -- 章节名
                                             UI.Label {
                                                 text = "第" .. viewChapter_ .. "章 " .. ch.name,
                                                 fontSize = 15, fontColor = { 255, 220, 150, 240 },
                                                 textAlign = "center",
-                                            },
-                                            -- 右箭头
-                                            UI.Panel {
-                                                width = 32, height = 32,
-                                                alignItems = "center", justifyContent = "center",
-                                                backgroundColor = canNext and { 60, 65, 80, 200 } or { 40, 40, 50, 100 },
-                                                borderRadius = 16,
-                                                onClick = canNext and function()
-                                                    viewChapter_ = viewChapter_ + 1
-                                                    StageSelect.Build()
-                                                end or nil,
-                                                children = {
-                                                    UI.Label { text = ">", fontSize = 16, fontColor = { 255, 255, 255, canNext and 230 or 60 } },
-                                                },
                                             },
                                         },
                                     },
@@ -218,7 +189,7 @@ function StageSelect.Build()
                                                 flexDirection = "row", alignItems = "center", gap = 8,
                                                 children = {
                                                     UI.Label {
-                                                        text = "最高战力:" .. (GameState.records and GameState.records.maxPower or 0),
+                                                        text = "最高IP:" .. (GameState.records and GameState.records.maxPower or 0),
                                                         fontSize = 9, fontColor = { 255, 200, 100, 200 },
                                                     },
                                                     UI.Label {

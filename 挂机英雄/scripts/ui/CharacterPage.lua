@@ -504,7 +504,6 @@ local function BuildElementTab()
                     CreateInfoRow("奥术增伤",   "char_arcane_dmg"),
                     CreateInfoRow("流水增伤",   "char_water_dmg"),
                     CreateInfoRow("反应增伤",   "char_reaction_dmg"),
-                    CreateInfoRow("武器元素",   "char_weapon_elem"),
                 },
             },
         },
@@ -968,9 +967,6 @@ function CharacterPage.Refresh()
     set("char_arcane_dmg",  "+" .. fmtPct(GameState.GetSpecificElemDmg("arcaneDmg")))
     set("char_water_dmg",   "+" .. fmtPct(GameState.GetSpecificElemDmg("waterDmg")))
     set("char_reaction_dmg", fmtMul(GameState.GetReactionDmgBonus()))
-    local weaponElem = GameState.GetWeaponElement()
-    local elemName = Config.WEAPON_ELEMENTS.names[weaponElem] or "物理"
-    set("char_weapon_elem", elemName)
 
     -- 套装信息（逐行构建，激活项高亮）
     local sc = GetScreenScale()
