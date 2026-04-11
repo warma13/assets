@@ -1,0 +1,33 @@
+{
+  "$schema": "../schemas/project.schema.json",
+  "project_id": "p_o9fd",
+  "author": {
+    "id": "1779057459"
+  },
+  "entry": "main.lua",
+  "version": "1.0.1",
+  "taptap_publish": {
+    "title": "暗黑召唤：无尽征途",
+    "description": "暗黑风格的合并塔防游戏，招募英雄、合成升级、挑战副本",
+    "category": "strategy",
+    "screen_orientation": "portrait",
+    "collection_type": "sce",
+    "trial_note": "<developer's note>",
+    "app_platforms": "1,2",
+    "developer_id": 264371,
+    "app_id": 839258,
+    "miniapp_id": "tapmcnrtnmm2wpzqtw"
+  },
+  "assets": {
+    "icon": "",
+    "screenshots": [],
+    "promotional_image": ""
+  },
+  "test_qrcode": {
+    "url": "https://tapcode-sce.spark.xd.com/qrcode/p_o9fd_1775600465726.png",
+    "generated_at": "2026-04-07T22:21:05.824Z"
+  },
+  "metadata": {
+    "updated_at": "2026-04-07T22:21:05.824Z"
+  }
+}
