@@ -1399,7 +1399,7 @@ end
 -- ============================================================================
 
 function SlotSaveSystem.SaveLocal(saveData)
-    if currentSlot_ <= 0 then return end
+    if currentSlot_ < 0 then return end
     local ok, err = pcall(function()
         local data = saveData or SlotSaveSystem.Serialize()
         local saveFile   = "save_slot_" .. currentSlot_ .. ".json"
@@ -1426,7 +1426,7 @@ end
 local lastSavedHead_ = nil  -- { [slotId] = headData }
 
 local function DoCloudSave(saveData, isRetry)
-    if currentSlot_ <= 0 then return end
+    if currentSlot_ < 0 then return end
 
     local ok, _ = pcall(function()
         GameState.UpdateRecords()
@@ -1474,10 +1474,11 @@ local function DoCloudSave(saveData, isRetry)
         -- 向后兼容: 回写旧 key (完整 saveData)
         batch:Set("save_data", saveData)
 
-        -- 排行榜 iscores
-        batch:SetInt("max_power_v2", math.floor(GameState.records.maxPower / 1000))
-            :SetInt("max_stage_v2", stageVal)
-            :SetInt("max_trial_floor_v3", GameState.endlessTrial.maxFloor or 0)
+        -- 排行榜 iscores（按槽位分离 key）
+        local slotSuffix = "_s" .. currentSlot_
+        batch:SetInt("max_power_v2" .. slotSuffix, math.floor(GameState.records.maxPower / 1000))
+            :SetInt("max_stage_v2" .. slotSuffix, stageVal)
+            :SetInt("max_trial_floor_v3" .. slotSuffix, GameState.endlessTrial.maxFloor or 0)
             :SetInt("active_slot", currentSlot_)
             :Save("自动存档", {
                 ok = function()

@@ -1,5 +1,5 @@
 -- ============================================================================
--- ui/RewardPanel.lua - 统一奖励入口面板（Tab切换: 奖励 / 日常 / 离线）
+-- ui/RewardPanel.lua - 统一奖励入口面板（Tab切换: 奖励 / 日常）
 -- 每个 Tab 保留各自原始面板的独立样式
 -- ============================================================================
 
@@ -34,7 +34,6 @@ end
 function RewardPanel.Close()
     VersionReward.SetEmbeddedRefresh(nil)
     DailyRewards.SetEmbeddedRefresh(nil)
-    OfflineChest.SetEmbeddedRefresh(nil)
     if overlay_ then
         overlay_:Destroy()
         overlay_ = nil
@@ -60,7 +59,6 @@ end
 function RewardPanel.HasRedDot()
     return VersionReward.HasUnclaimedReward()
         or DailyRewards.HasRedDot()
-        or OfflineChest.HasPendingReward()
 end
 
 -- ============================================================================
@@ -82,7 +80,6 @@ function RewardPanel.Build()
     local refreshFn = function() RewardPanel.Build() end
     VersionReward.SetEmbeddedRefresh(refreshFn)
     DailyRewards.SetEmbeddedRefresh(refreshFn)
-    OfflineChest.SetEmbeddedRefresh(refreshFn)
 
     -- Tab 按钮样式
     local function tabBtn(label, tabId, hasRedDot)
@@ -118,7 +115,6 @@ function RewardPanel.Build()
         children = {
             tabBtn("奖励", "reward", VersionReward.HasUnclaimedReward()),
             tabBtn("日常", "daily", DailyRewards.HasRedDot()),
-            tabBtn("离线", "offline", OfflineChest.HasPendingReward()),
             -- 关闭按钮
             UI.Panel {
                 width = 28, height = 28, borderRadius = 14,
@@ -145,8 +141,6 @@ function RewardPanel.Build()
         VersionReward.BuildContent(contentArea_)
     elseif activeTab_ == "daily" then
         DailyRewards.BuildContent(contentArea_, refreshFn)
-    elseif activeTab_ == "offline" then
-        OfflineChest.BuildContent(contentArea_)
     end
 
     overlay_ = UI.Panel {

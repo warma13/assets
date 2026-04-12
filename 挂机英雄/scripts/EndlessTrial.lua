@@ -8,9 +8,17 @@
 local GameState       = require("GameState")
 local StageConfig     = require("StageConfig")
 local MonsterTemplates = require("MonsterTemplates")
+local SlotSaveSystem  = require("SlotSaveSystem")
 
 ---@diagnostic disable-next-line: undefined-global
 local lobby = lobby  -- 引擎内置全局
+
+--- 获取带槽位后缀的试炼排行榜 key
+local function TrialSlotKey()
+    local slot = SlotSaveSystem.GetActiveSlot()
+    if slot <= 0 then slot = 1 end
+    return "max_trial_floor_v3_s" .. slot
+end
 
 local EndlessTrial = {}
 
@@ -461,13 +469,14 @@ end
 --- 获取试炼排行榜
 ---@param callback fun(rankList: table[], myRank: number|nil, myFloor: number|nil)
 function EndlessTrial.FetchLeaderboard(callback)
+    local trialKey = TrialSlotKey()
     pcall(function()
-        clientCloud:GetRankList("max_trial_floor_v3", 0, 50, {
+        clientCloud:GetRankList(trialKey, 0, 50, {
             ok = function(rankList)
                 -- 提取层数
                 for _, r in ipairs(rankList) do
                     if r.iscore then
-                        r._floor = r.iscore["max_trial_floor_v3"] or 0
+                        r._floor = r.iscore[trialKey] or 0
                     else
                         r._floor = 0
                     end
@@ -484,7 +493,7 @@ function EndlessTrial.FetchLeaderboard(callback)
                 local function fetchMyRank(list)
                     pcall(function()
                         local myId = lobby:GetMyUserId()
-                        clientCloud:GetUserRank(myId, "max_trial_floor_v3", {
+                        clientCloud:GetUserRank(myId, trialKey, {
                             ok = function(rank, score)
                                 local myFloor = GameState.endlessTrial.maxFloor or 0
                                 if (score or 0) > myFloor then
@@ -532,7 +541,7 @@ function EndlessTrial.FetchLeaderboard(callback)
             error = function()
                 callback({}, nil, nil)
             end,
-        }, "max_trial_floor_v3")
+        }, trialKey)
     end)
 end
 

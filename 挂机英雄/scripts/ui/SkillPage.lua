@@ -100,8 +100,42 @@ function SkillPage.Create()
                 },
             },
 
-            -- 技能树画布
-            treeWidget_,
+            -- 技能树画布 + 缩放按钮
+            UI.Panel {
+                width = "100%", flexGrow = 1, flexBasis = 0,
+                children = {
+                    treeWidget_,
+                    -- 缩放按钮 (绝对定位右侧)
+                    UI.Panel {
+                        position = "absolute", right = 8, top = "40%",
+                        flexDirection = "column", alignItems = "center", gap = 6,
+                        children = {
+                            UI.Panel {
+                                width = 28, height = 28,
+                                borderRadius = 14,
+                                backgroundColor = { 40, 45, 60, 200 },
+                                borderWidth = 1, borderColor = { 100, 110, 140, 150 },
+                                alignItems = "center", justifyContent = "center",
+                                onClick = function() treeWidget_:ZoomStep(1) end,
+                                children = {
+                                    UI.Label { text = "+", fontSize = 16, fontColor = { 220, 220, 240, 230 } },
+                                },
+                            },
+                            UI.Panel {
+                                width = 28, height = 28,
+                                borderRadius = 14,
+                                backgroundColor = { 40, 45, 60, 200 },
+                                borderWidth = 1, borderColor = { 100, 110, 140, 150 },
+                                alignItems = "center", justifyContent = "center",
+                                onClick = function() treeWidget_:ZoomStep(-1) end,
+                                children = {
+                                    UI.Label { text = "-", fontSize = 16, fontColor = { 220, 220, 240, 230 } },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
 
             -- 装备槽位区域
             UI.Panel {

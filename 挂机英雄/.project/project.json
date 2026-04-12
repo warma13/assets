@@ -5,7 +5,7 @@
     "id": "1779057459"
   },
   "entry": "main.lua",
-  "version": "1.17.2",
+  "version": "1.17.6",
   "taptap_publish": {
     "developer_id": 264371,
     "title": "挂机英雄",
@@ -32,13 +32,18 @@
       "https://tapcode-sce.spark.xd.com/assets/game_material/挂机英雄/SCREENSHOT_2026-03-07T11-43-26_02.png",
       "https://tapcode-sce.spark.xd.com/assets/game_material/挂机英雄/SCREENSHOT_2026-03-07T11-43-26_03.png"
     ],
-    "promotional_image_url": "https://tapcode-sce.spark.xd.com/assets/game_material/挂机英雄/PROMO_2026-03-07T11-43-26_01.png"
+    "promotional_image_url": "https://tapcode-sce.spark.xd.com/assets/game_material/挂机英雄/PROMO_2026-03-07T11-43-26_01.png",
+    "cover_horizontal": "./.project/game_material/COVER_HORIZONTAL_2026-04-11T13-42-16_01.png",
+    "cover_horizontal_url": "https://tapcode-sce.spark.xd.com/assets/game_material/挂机英雄/COVER_HORIZONTAL_2026-04-11T13-42-16_01.png",
+    "cover_vertical": "./.project/game_material/COVER_VERTICAL_2026-04-11T13-42-16_01.png",
+    "cover_vertical_url": "https://tapcode-sce.spark.xd.com/assets/game_material/挂机英雄/COVER_VERTICAL_2026-04-11T13-42-16_01.png"
   },
   "test_qrcode": {
     "url": "https://tapcode-sce.spark.xd.com/qrcode/p_mk5c_1772886863564.png",
     "generated_at": "2026-03-07T12:34:23.682Z"
   },
   "metadata": {
-    "updated_at": "2026-03-07T12:34:23.682Z"
+    "updated_at": "2026-04-11T13:43:21.184Z",
+    "promo_dependent_hash": "0f0fc1c7160e5959c0e4ca6781d1602b"
   }
 }

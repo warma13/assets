@@ -31,9 +31,9 @@ function OfflineChest.SetOverlayRoot(root)
     overlayRoot_ = root
 end
 
---- 是否有未领取的离线奖励
+--- 是否有未领取的离线奖励（离线奖励已禁用）
 function OfflineChest.HasPendingReward()
-    return rewardData_ ~= nil
+    return false
 end
 
 --- 合并新奖励到已有的未领取奖励中
@@ -66,26 +66,10 @@ local function MergeReward(existing, new)
     end
 end
 
---- 检查并显示离线奖励 (在 SlotSaveSystem.LoadSlot() 之后调用)
+--- 检查并显示离线奖励（离线奖励已禁用，直接跳过）
 function OfflineChest.Check()
-    local sec = SlotSaveSystem.offlineSeconds
-    if sec <= 0 then return end
-
-    local newReward = GameState.CalculateOfflineReward(sec)
-
-    if rewardData_ then
-        -- 已有未领取的奖励，合并
-        offlineSec_ = offlineSec_ + sec
-        MergeReward(rewardData_, newReward)
-    else
-        offlineSec_ = sec
-        rewardData_ = newReward
-    end
-
-    -- 清零，防止重复计算
     SlotSaveSystem.offlineSeconds = 0
-
-    OfflineChest.Show()
+    return
 end
 
 --- 格式化离线时长

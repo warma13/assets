@@ -10,12 +10,33 @@ local Colors = require("ui.Colors")
 ---@diagnostic disable-next-line: undefined-global
 local lobby = lobby  -- 引擎内置全局
 
+local SlotSaveSystem = require("SlotSaveSystem")
+
 local Leaderboard = {}
 
--- 排行榜云存储 key（换版本后缀可清空旧数据重新开始）
-local KEY_POWER = "max_power_v2"
-local KEY_STAGE = "max_stage_v2"
-local KEY_TRIAL = "max_trial_floor_v2"
+-- 排行榜云存储 key（按槽位分离，后缀 _s{N}）
+local KEY_POWER_BASE = "max_power_v2"
+local KEY_STAGE_BASE = "max_stage_v2"
+local KEY_TRIAL_BASE = "max_trial_floor_v3"
+
+--- 获取带槽位后缀的 key
+local function SlotKey(base)
+    local slot = SlotSaveSystem.GetActiveSlot()
+    if slot <= 0 then slot = 1 end
+    return base .. "_s" .. slot
+end
+
+-- 当前槽位的实际 key（在 Show/LoadRank 时刷新）
+local KEY_POWER = KEY_POWER_BASE
+local KEY_STAGE = KEY_STAGE_BASE
+local KEY_TRIAL = KEY_TRIAL_BASE
+
+--- 刷新当前槽位 key
+local function RefreshSlotKeys()
+    KEY_POWER = SlotKey(KEY_POWER_BASE)
+    KEY_STAGE = SlotKey(KEY_STAGE_BASE)
+    KEY_TRIAL = SlotKey(KEY_TRIAL_BASE)
+end
 
 ---@type Widget
 local overlay_ = nil
@@ -70,6 +91,9 @@ end
 function Leaderboard.Show()
     if visible_ then Leaderboard.Hide() end
     visible_ = true
+
+    -- 刷新当前槽位 key
+    RefreshSlotKeys()
 
     -- 构建过滤集合 (测试账号 + 封禁用户)
     testSet_ = {}

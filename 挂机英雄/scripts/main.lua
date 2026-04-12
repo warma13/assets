@@ -42,6 +42,7 @@ local AbyssMode              = require("AbyssMode")
 local DamageTracker     = require("DamageTracker")
 local TitleSystem       = require("TitleSystem")
 local DailyRewards      = require("DailyRewards")
+local AdExchange        = require("ui.AdExchange")
 
 ---@diagnostic disable-next-line: undefined-global
 local lobby = lobby  -- 引擎内置全局
@@ -415,6 +416,17 @@ local function BuildGameUI()
                     UI.Label { text = "排行", fontSize = BTN_FONT, color = LABEL_COLOR },
                 },
             },
+            -- 广告兑换
+            UI.Panel {
+                flexDirection = "row", alignItems = "center", gap = 2,
+                backgroundColor = BTN_BG, borderRadius = BTN_RAD,
+                paddingHorizontal = BTN_PH, paddingVertical = BTN_PV,
+                onClick = Utils.Debounce(function() AdExchange.Toggle() end, 0.3),
+                children = {
+                    UI.Panel { width = ICON_SZ, height = ICON_SZ, backgroundImage = AdExchange.GetIcon(), backgroundFit = "contain" },
+                    UI.Label { text = "兑换", fontSize = BTN_FONT, color = LABEL_COLOR },
+                },
+            },
         },
     }
 
@@ -451,6 +463,28 @@ local function BuildGameUI()
                 children = {
                     UI.Panel { width = ICON_SZ, height = ICON_SZ, backgroundImage = Settings.GetIcon(), backgroundFit = "contain" },
                     UI.Label { text = "设置", fontSize = BTN_FONT, color = LABEL_COLOR },
+                },
+            },
+            -- 保存
+            UI.Panel {
+                flexDirection = "row", alignItems = "center", gap = 2,
+                backgroundColor = BTN_BG, borderRadius = BTN_RAD,
+                paddingHorizontal = BTN_PH, paddingVertical = BTN_PV,
+                onClick = Utils.Debounce(function()
+                    local activeSlot = SlotSaveSystem.GetActiveSlot()
+                    if activeSlot == 0 then
+                        -- 起始之地: 直接保存云端
+                        SlotSaveSystem.SaveNow()
+                        Toast.Success("已保存")
+                    else
+                        -- 灰烬荒原: 弹出存档选择
+                        StartScreen.ShowSavePicker(function()
+                            if SwitchSaveSlot then SwitchSaveSlot() end
+                        end)
+                    end
+                end, 0.5),
+                children = {
+                    UI.Label { text = "保存", fontSize = BTN_FONT, color = LABEL_COLOR },
                 },
             },
             -- 分隔符
@@ -522,6 +556,7 @@ local function BuildGameUI()
     -- overlay 挂载到 uiRoot (quickBar 在 battleArea 内, 不受影响)
     InventoryPage.SetOverlayRoot(uiRoot_)
     Leaderboard.SetOverlayRoot(uiRoot_)
+    AdExchange.SetOverlayRoot(uiRoot_)
     Settings.SetOverlayRoot(uiRoot_)
     Settings.Init()
     Settings.SetIdleCallback(function()
@@ -623,6 +658,7 @@ local function TeardownGameUI()
     BossCodex.Close()
     ResourceDungeonResult.Close()
     SetDungeonResult.Close()
+    AdExchange.Close()
 
     -- 2. 退出特殊模式 (统一走适配器 OnExit)
     GameMode.ExitCurrent()

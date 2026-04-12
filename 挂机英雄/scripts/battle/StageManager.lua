@@ -141,19 +141,7 @@ function StageManager.NextWave(bs)
         SaveSystem.SaveNow()
     end
 
-    -- 判断是否在刷旧关 (当前关卡低于历史最高进度)
-    local rec = GameState.records
-    local isFarming = gs.chapter < rec.maxChapter
-                   or (gs.chapter == rec.maxChapter and gs.stage < rec.maxStage)
-
-    if isFarming then
-        -- 刷关模式: 原地重开当前关卡
-        print("[BattleSystem] Farming mode: replay " .. gs.chapter .. "-" .. gs.stage)
-        StageManager.RetryStage(bs)
-        return
-    end
-
-    -- 推图模式: 推进到下一关
+    -- 推进到下一关
     local totalStages = StageConfig.GetStageCount(gs.chapter)
     if gs.stage < totalStages then
         gs.stage = gs.stage + 1

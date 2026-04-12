@@ -423,14 +423,18 @@ local function BuildServerCard(name, desc, statusText, statusColor, onClick)
     }
 end
 
---- 起始之地: 使用独立 slot 0, 每次点击重新创建
+--- 起始之地: 使用独立 slot 0, 已有存档则加载, 否则新建
 function StartScreen._EnterStarterServer()
     if loading_ then return end
     loading_ = true
     local toast = getToast()
     if toast then toast.Show("正在进入起始之地...") end
 
-    getSlotSave().CreateNewSlot(0, function(ok, err)
+    local SlotSave = getSlotSave()
+    local meta = SlotSave.GetMeta()
+    local hasSlot0 = meta and meta.slots and meta.slots["0"] ~= nil
+
+    local function onDone(ok, err)
         loading_ = false
         if ok then
             StartScreen.Hide()
@@ -438,7 +442,13 @@ function StartScreen._EnterStarterServer()
         else
             if toast then toast.Warn("进入失败: " .. (err or "未知错误")) end
         end
-    end)
+    end
+
+    if hasSlot0 then
+        SlotSave.LoadSlot(0, onDone)
+    else
+        SlotSave.CreateNewSlot(0, onDone)
+    end
 end
 
 --- 打开服务器选择浮层

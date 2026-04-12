@@ -836,6 +836,23 @@ function SkillTreeCanvas:OnPinchEnd(event)
     self.pinchStartZoom_ = nil
 end
 
+--- 以画布中心为锚点缩放 (供外部按钮调用)
+---@param direction number  1=放大, -1=缩小
+function SkillTreeCanvas:ZoomStep(direction)
+    local l = self:GetAbsoluteLayout()
+    if not l then return end
+    local cx = l.w / 2
+    local cy = l.h / 2
+    local canvasX = (cx - self.panX_) / self.zoom_
+    local canvasY = (cy - self.panY_) / self.zoom_
+    local factor = 1 + (direction > 0 and 0.15 or -0.15)
+    local newZoom = math.max(self.minZoom_, math.min(self.maxZoom_, self.zoom_ * factor))
+    self.panX_ = cx - canvasX * newZoom
+    self.panY_ = cy - canvasY * newZoom
+    self.zoom_ = newZoom
+    self:ClampPan()
+end
+
 -- ============================================================================
 -- Update (惯性 + 动画)
 -- ============================================================================

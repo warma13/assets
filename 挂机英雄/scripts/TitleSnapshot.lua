@@ -5,10 +5,23 @@
 ---@diagnostic disable-next-line: undefined-global
 local cjson = cjson
 
+local SlotSaveSystem = require("SlotSaveSystem")
+
 local TitleSnapshot = {}
 
 local SNAPSHOT_FILE = "title_snapshot.json"
-local RANK_KEYS = { "max_power_v2", "max_stage_v2", "max_trial_floor_v2" }
+
+--- 获取带槽位后缀的 key
+local function SlotKey(base)
+    local slot = SlotSaveSystem.GetActiveSlot()
+    if slot <= 0 then slot = 1 end
+    return base .. "_s" .. slot
+end
+
+--- 获取当前槽位的排行榜 key 列表
+local function GetRankKeys()
+    return { SlotKey("max_power_v2"), SlotKey("max_stage_v2"), SlotKey("max_trial_floor_v3") }
+end
 local FETCH_LIMIT = 100  -- 每个榜拉取条数
 local POWER_SKIP_TOP = 3 -- 战力榜跳过前 N 名异常分数
 
@@ -21,9 +34,10 @@ local nickMap_ = {}  -- userId → nickname 全局昵称缓存
 -- 拉取单个排行榜
 -- ============================================================================
 
-local function FetchRank(key, callback)
+local function FetchRank(key, allKeys, callback)
+    local powerKey = allKeys[1]  -- 战力榜 key（用于判断跳过逻辑）
     local ok, _ = pcall(function()
-        clientCloud:GetRankList(key, 0, FETCH_LIMIT + (key == "max_power_v2" and POWER_SKIP_TOP or 0), {
+        clientCloud:GetRankList(key, 0, FETCH_LIMIT + (key == powerKey and POWER_SKIP_TOP or 0), {
             ok = function(rankList)
                 -- 收集 userId 查昵称
                 local userIds = {}
@@ -45,7 +59,7 @@ local function FetchRank(key, callback)
                     for i, item in ipairs(rankList) do
                         local score = item.iscore[key] or 0
                         -- 战力榜跳过前 POWER_SKIP_TOP 名
-                        if key == "max_power_v2" and i <= POWER_SKIP_TOP then
+                        if key == powerKey and i <= POWER_SKIP_TOP then
                             -- 跳过异常分数
                         else
                             rank = rank + 1
@@ -85,7 +99,7 @@ local function FetchRank(key, callback)
                 print("[TitleSnapshot] GetRankList error for " .. key .. ": " .. tostring(reason))
                 callback({})
             end,
-        }, "max_power_v2", "max_stage_v2", "max_trial_floor_v2")
+        }, table.unpack(allKeys))
     end)
 
     if not ok then
@@ -123,8 +137,8 @@ local function SaveSnapshot()
         print("[TitleSnapshot] ===== 快照已保存 =====")
         print("[TitleSnapshot] 文件: " .. SNAPSHOT_FILE)
         print("[TitleSnapshot] 时间: " .. snapshot.timestamp)
-        for _, key in ipairs(RANK_KEYS) do
-            print("[TitleSnapshot]   " .. key .. ": " .. #(results_[key] or {}) .. " 条")
+        for key, entries in pairs(results_) do
+            print("[TitleSnapshot]   " .. key .. ": " .. #entries .. " 条")
         end
         print("[TitleSnapshot] 总计: " .. total .. " 条记录")
     else
@@ -138,11 +152,12 @@ end
 
 function TitleSnapshot.Run()
     print("[TitleSnapshot] 开始拉取排行榜快照...")
-    pending_ = #RANK_KEYS
+    local keys = GetRankKeys()
+    pending_ = #keys
     results_ = {}
 
-    for _, key in ipairs(RANK_KEYS) do
-        FetchRank(key, function(entries)
+    for _, key in ipairs(keys) do
+        FetchRank(key, keys, function(entries)
             results_[key] = entries
             pending_ = pending_ - 1
             print("[TitleSnapshot] " .. key .. " 完成, " .. #entries .. " 条")
