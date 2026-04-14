@@ -20,6 +20,7 @@ local StartScreen    = require("ui.StartScreen")
 local StageSelect    = require("ui.StageSelect")
 local StageConfig    = require("StageConfig")
 local Toast          = require("ui.Toast")
+local FloatTip       = require("ui.FloatTip")
 local EventBus       = require("EventBus")
 local OfflineChest   = require("ui.OfflineChest")
 local Particles      = require("battle.Particles")
@@ -36,6 +37,9 @@ local ResourceDungeon        = require("ResourceDungeon")
 local ResourceDungeonResult  = require("ui.ResourceDungeonResult")
 local SetDungeon             = require("SetDungeon")
 local SetDungeonResult       = require("ui.SetDungeonResult")
+local ManaForest             = require("ManaForest")
+local ManaForestResult       = require("ui.ManaForestResult")
+local ManaForestPanel        = require("ui.ManaForestPanel")
 local GameMode               = require("GameMode")
 local RewardPanel            = require("ui.RewardPanel")
 local AbyssMode              = require("AbyssMode")
@@ -454,6 +458,20 @@ local function BuildGameUI()
                     UI.Label { text = "挑战", fontSize = BTN_FONT, color = LABEL_COLOR },
                 },
             },
+            -- 魔力之森（独立入口）
+            UI.Panel {
+                flexDirection = "row", alignItems = "center", gap = 2,
+                backgroundColor = BTN_BG, borderRadius = BTN_RAD,
+                paddingHorizontal = BTN_PH, paddingVertical = BTN_PV,
+                onClick = Utils.Debounce(function()
+                    if not GameMode.IsAnyActive() or GameMode.Is("abyss") then
+                        ManaForestPanel.Toggle()
+                    end
+                end, 0.3),
+                children = {
+                    UI.Label { text = "魔力之森", fontSize = BTN_FONT, color = LABEL_COLOR },
+                },
+            },
             -- 设置
             UI.Panel {
                 flexDirection = "row", alignItems = "center", gap = 2,
@@ -570,6 +588,7 @@ local function BuildGameUI()
     DailyRewards.SetOverlayRoot(uiRoot_)
     RewardPanel.SetOverlayRoot(uiRoot_)
     Toast.SetRoot(uiRoot_)
+    FloatTip.SetRoot(uiRoot_)
     EventBus.On("loot:rare_item", function(name)
         Toast.Success("获得稀有道具: " .. name)
     end)
@@ -630,6 +649,15 @@ local function BuildGameUI()
         GameMode.SwitchTo(nil)
     end)
 
+    ManaForestPanel.SetOverlayRoot(uiRoot_)
+    ManaForestPanel.SetStartCallback(function()
+        GameMode.SwitchTo("manaForest")
+    end)
+    ManaForestResult.SetOverlayRoot(uiRoot_)
+    ManaForestResult.SetCloseCallback(function()
+        GameMode.SwitchTo(nil)
+    end)
+
     -- 重置战斗初始化标记 (切换存档时需要重新初始化)
     battleInited_ = false
 
@@ -658,6 +686,8 @@ local function TeardownGameUI()
     BossCodex.Close()
     ResourceDungeonResult.Close()
     SetDungeonResult.Close()
+    ManaForestPanel.Close()
+    ManaForestResult.Close()
     AdExchange.Close()
 
     -- 2. 退出特殊模式 (统一走适配器 OnExit)
@@ -858,6 +888,7 @@ function HandleUpdate(eventType, eventData)
     GameState.UpdatePotionBuffs(dt)
     BattleSystem.Update(dt)
     Toast.Update(dt)
+    FloatTip.Update(dt)
     OfflineChest.Update(dt)
 
     -- 延迟离线奖励检查：等战斗已运行一帧后再弹出，背后有实际画面
@@ -896,6 +927,12 @@ function HandleUpdate(eventType, eventData)
     if BattleSystem.setDungeonEnded and not SetDungeonResult.IsOpen() then
         SetDungeonResult.Show(SetDungeon.fightResult)
         BattleSystem.setDungeonEnded = false
+    end
+
+    -- 魔力之森结算检测
+    if BattleSystem.manaForestEnded and not ManaForestResult.IsOpen() then
+        ManaForestResult.Show(ManaForest.fightResult)
+        BattleSystem.manaForestEnded = false
     end
 
     -- 升级检测: 等级变化时触发音效 + 粒子
@@ -980,7 +1017,7 @@ function PlaySFX(path, gain)
     local fxLv = Settings.GetFxLevel()
     if fxLv >= 2 then
         local cooldown = fxLv == 3 and 0.5 or 0.3
-        local now = os.clock()
+        local now = time:GetElapsedTime()
         local last = sfxCooldowns_[path] or 0
         if now - last < cooldown then return end
         sfxCooldowns_[path] = now

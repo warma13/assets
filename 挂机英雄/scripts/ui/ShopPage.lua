@@ -112,7 +112,7 @@ local function createResourceBar()
                 flexDirection = "row", alignItems = "center", gap = 3,
                 children = {
                     UI.Panel { width = 12, height = 12, backgroundImage = "Textures/icon_stone.png", backgroundFit = "contain" },
-                    UI.Label { id = "shop_stone", text = Utils.FormatNumber(GameState.materials.stone), fontSize = 11, fontColor = { 160, 200, 255, 230 } },
+                    UI.Label { id = "shop_stone", text = Utils.FormatNumber(GameState.GetMaterial("iron")), fontSize = 11, fontColor = { 160, 200, 255, 230 } },
                 },
             },
         },
@@ -454,20 +454,30 @@ local function createForgeButton()
 
     -- 消耗计算
     local lockSlot = lockedSlotId_ ~= nil
-    local goldCost, stoneCost = 0, 0
+    local goldCost = 0
     local costLabel = "免费"
 
+    local matCost = nil
     if not forgeInfo.isFree then
         if scaleMul then
             goldCost = Config.GetForgeGoldCost(scaleMul, lockSlot)
-            stoneCost = Config.GetForgeStoneCost(lockSlot)
+            matCost = Config.GetForgeMaterialCost(lockSlot)
         end
-        costLabel = stoneCost .. "石 + " .. goldCost .. "金"
+        -- 构建材料消耗描述
+        local matParts = {}
+        if matCost then
+            for matId, amt in pairs(matCost) do
+                local def = Config.MATERIAL_MAP and Config.MATERIAL_MAP[matId]
+                local name = def and def.name or matId
+                table.insert(matParts, amt .. name)
+            end
+        end
+        costLabel = table.concat(matParts, "+") .. " + " .. goldCost .. "金"
     end
 
     local canForge = forgeInfo.remaining > 0 and scaleMul ~= nil
     if not forgeInfo.isFree and scaleMul then
-        if GameState.player.gold < goldCost or GameState.materials.stone < stoneCost then
+        if GameState.player.gold < goldCost or not GameState.HasMaterials(matCost) then
             canForge = false
         end
     end
@@ -705,9 +715,21 @@ function ShopPage.RenderGachaOverlay()
                                 break
                             end
                         end
-                        local stones = Config.DECOMPOSE_STONES[gachaItem_.qualityIdx] or 1
-                        GameState.AddStone(stones)
-                        Toast.Success("已分解，获得 " .. stones .. " 强化石")
+                        local mats = Config.DECOMPOSE_MATERIALS[gachaItem_.qualityIdx]
+                        if mats then GameState.AddMaterials(mats) end
+                        -- 金币产出
+                        local dGold = Config.DECOMPOSE_GOLD[gachaItem_.qualityIdx] or 0
+                        if dGold > 0 then GameState.AddGold(dGold) end
+                        -- 构建分解结果描述
+                        local matParts = {}
+                        if dGold > 0 then table.insert(matParts, dGold .. "金币") end
+                        if mats then
+                            for matId, amt in pairs(mats) do
+                                local def = Config.MATERIAL_MAP and Config.MATERIAL_MAP[matId]
+                                table.insert(matParts, amt .. (def and def.name or matId))
+                            end
+                        end
+                        Toast.Success("已分解，获得 " .. table.concat(matParts, " + "))
                         gachaItem_ = nil
                         gachaPhase_ = 0
                         if gachaOverlay_ then gachaOverlay_:SetVisible(false) end
@@ -848,7 +870,7 @@ local function updateResourceText()
     local goldLabel = page_:FindById("shop_gold")
     if goldLabel then goldLabel:SetText(Utils.FormatNumber(GameState.player.gold)) end
     local stoneLabel = page_:FindById("shop_stone")
-    if stoneLabel then stoneLabel:SetText(Utils.FormatNumber(GameState.materials.stone)) end
+    if stoneLabel then stoneLabel:SetText(Utils.FormatNumber(GameState.GetMaterial("iron"))) end
 end
 
 --- 第2层-药水：更新计时器 + 按钮状态
@@ -902,8 +924,15 @@ local function updateForgeDynamic()
     if not forgeInfo.isFree then
         if scaleMul then
             local goldCost = Config.GetForgeGoldCost(scaleMul, lockSlot)
-            local stoneCost = Config.GetForgeStoneCost(lockSlot)
-            costLabel = stoneCost .. "石 + " .. goldCost .. "金"
+            local matCost = Config.GetForgeMaterialCost(lockSlot)
+            local matParts = {}
+            if matCost then
+                for matId, amt in pairs(matCost) do
+                    local def = Config.MATERIAL_MAP and Config.MATERIAL_MAP[matId]
+                    table.insert(matParts, amt .. (def and def.name or matId))
+                end
+            end
+            costLabel = table.concat(matParts, "+") .. " + " .. goldCost .. "金"
         end
     end
 

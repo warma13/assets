@@ -305,7 +305,10 @@ function RedeemSystem.Redeem(inputCode)
             GameState.AddSoulCrystal(rewards.soulCrystal)
         end
         if rewards.stone and rewards.stone > 0 then
-            GameState.AddStone(rewards.stone)
+            GameState.AddStone(rewards.stone)  -- 兼容旧兑换码(stone→iron)
+        end
+        if rewards.materials then
+            GameState.AddMaterials(rewards.materials)
         end
         if rewards.bagItems then
             for _, bi in ipairs(rewards.bagItems) do

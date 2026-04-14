@@ -2,11 +2,12 @@
 -- battle/EnemySystem.lua - 敌人减益/AI/攻击/特殊能力
 -- ============================================================================
 
-local Config          = require("Config")
-local GameState       = require("GameState")
-local StageConfig     = require("StageConfig")
-local Particles       = require("battle.Particles")
-local CombatUtils     = require("battle.CombatUtils")
+local Config           = require("Config")
+local GameState        = require("GameState")
+local StageConfig      = require("StageConfig")
+local Particles        = require("battle.Particles")
+local CombatUtils      = require("battle.CombatUtils")
+local MonsterFamilies  = require("MonsterFamilies")
 
 local EnemySystem = {}
 
@@ -329,15 +330,27 @@ function EnemySystem.UpdateEnemyAbilities(dt, bs)
                 end
             end
 
-            -- ── 召唤 (summon): Boss定时召唤小怪 ──
+            -- ── 召唤 (summon): Boss定时召唤小怪 (优先同家族) ──
             if e.summon then
                 e.summonTimer = (e.summonTimer or 0) - dt
                 if e.summonTimer <= 0 then
                     e.summonTimer = e.summon.interval
-                    local sTemplate = StageConfig.MONSTERS[e.summon.monsterId]
+                    local gs = GameState.stage
+                    local scaleMul = StageConfig.GetScaleMul(gs.chapter, gs.stage)
+                    -- 优先用 Boss 同家族的 swarm 成员
+                    local sTemplate = nil
+                    local summonTplId = e.summon.monsterId
+                    if e.familyId then
+                        local familyDef = MonsterFamilies.Get(e.familyId)
+                        if familyDef and familyDef.members and familyDef.members.swarm then
+                            sTemplate = MonsterFamilies.Resolve(e.familyId, "swarm", gs.chapter, nil, nil)
+                            summonTplId = e.familyId .. "_swarm"
+                        end
+                    end
+                    if not sTemplate then
+                        sTemplate = StageConfig.MONSTERS[e.summon.monsterId]
+                    end
                     if sTemplate then
-                        local gs = GameState.stage
-                        local scaleMul = StageConfig.GetScaleMul(gs.chapter, gs.stage)
                         for _ = 1, (e.summon.count or 1) do
                             local sHp = math.floor(sTemplate.hp * scaleMul)
                             local sAtk = math.floor(sTemplate.atk * scaleMul)
@@ -349,9 +362,9 @@ function EnemySystem.UpdateEnemyAbilities(dt, bs)
                                 x = sx, y = sy,
                                 hp = sHp, maxHp = sHp, atk = sAtk,
                                 speed = sTemplate.speed, radius = sTemplate.radius or 16,
-                                expDrop = math.floor(sTemplate.expDrop * scaleMul),
-                                goldMin = math.floor(sTemplate.goldDrop[1] * math.sqrt(scaleMul)),
-                                goldMax = math.floor(sTemplate.goldDrop[2] * math.sqrt(scaleMul)),
+                                expDrop = math.floor((sTemplate.expDrop or 3) * scaleMul),
+                                goldMin = sTemplate.goldDrop and math.floor(sTemplate.goldDrop[1] * math.sqrt(scaleMul)) or 0,
+                                goldMax = sTemplate.goldDrop and math.floor(sTemplate.goldDrop[2] * math.sqrt(scaleMul)) or 0,
                                 color = { sTemplate.color[1], sTemplate.color[2], sTemplate.color[3] },
                                 image = sTemplate.image, isBoss = false, dead = false,
                                 def = math.floor((sTemplate.def or 0) * scaleMul), atkTimer = 0,
@@ -365,7 +378,8 @@ function EnemySystem.UpdateEnemyAbilities(dt, bs)
                                 defReduceRate = 0, defReduceTimer = 0,
                                 elemWeakenRate = 0, elemWeakenTimer = 0,
                                 reactionDot = nil,
-                                templateId = e.summon.monsterId,
+                                templateId = summonTplId,
+                                _isSummon = true,
                                 defPierce = sTemplate.defPierce or 0,
                                 packBonus = sTemplate.packBonus or 0, packThreshold = sTemplate.packThreshold or 0,
                                 isRanged = sTemplate.isRanged or false, deathExplode = sTemplate.deathExplode,

@@ -42,20 +42,21 @@ function M.Install(GS, ctx)
 
         local lockSlot = lockSlotId ~= nil
         local goldCost = isFree and 0 or Config.GetForgeGoldCost(scaleMul, lockSlot)
-        local stoneCost = isFree and 0 or Config.GetForgeStoneCost(lockSlot)
+        local matCost = isFree and {} or Config.GetForgeMaterialCost(lockSlot)
 
         if not isFree then
             if GS.player.gold < goldCost then
                 return nil, "金币不足 (" .. math.floor(GS.player.gold) .. "/" .. goldCost .. ")"
             end
-            if GS.materials.stone < stoneCost then
-                return nil, "强化石不足 (" .. GS.materials.stone .. "/" .. stoneCost .. ")"
+            local ok, reason = GS.HasMaterials(matCost)
+            if not ok then
+                return nil, reason
             end
         end
 
         if not isFree then
             GS.player.gold = GS.player.gold - goldCost
-            GS.materials.stone = GS.materials.stone - stoneCost
+            GS.SpendMaterials(matCost)
         end
 
         local qualityIdx = Config.FORGE_QUALITY_IDX
@@ -97,8 +98,16 @@ function M.Install(GS, ctx)
         local SaveSys = require("SaveSystem")
         SaveSys.MarkDirty()
 
-        print("[Forge] " .. item.name .. " (IP " .. itemPower .. ", "
-            .. (isFree and "免费" or ("消耗 " .. goldCost .. "金 " .. stoneCost .. "石")) .. ")")
+        local costStr = "免费"
+        if not isFree then
+            local parts = { goldCost .. "金" }
+            for matId, amt in pairs(matCost) do
+                local def = Config.MATERIAL_MAP[matId]
+                parts[#parts + 1] = amt .. (def and def.name or matId)
+            end
+            costStr = "消耗 " .. table.concat(parts, " ")
+        end
+        print("[Forge] " .. item.name .. " (IP " .. itemPower .. ", " .. costStr .. ")")
         return item, nil
     end
 

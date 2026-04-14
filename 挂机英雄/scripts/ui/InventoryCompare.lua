@@ -16,6 +16,7 @@ function InventoryCompare.Install(Parent, shared)
     local UI         = require("urhox-libs/UI")
     local Utils      = require("Utils")
     local Toast      = require("ui.Toast")
+    local FloatTip   = require("ui.FloatTip")
 
     ---------------------------------------------------------------------------
     -- 打孔确认浮层 (自定义实现，避免 Modal.Confirm PushOverlay 卡死)
@@ -768,24 +769,85 @@ function InventoryCompare.Install(Parent, shared)
 
             -- 升级按钮
             local actionBtns = {}
-            local canUp, reason = GameState.CanUpgradeEquip(equipped)
+            local canUp, reason, isEndgame = GameState.CanUpgradeEquip(equipped)
             local curLv = equipped.upgradeLv or 0
             local q = Config.EQUIP_QUALITY[equipped.qualityIdx]
             local maxLv = q and q.maxUpgrade or 0
-            local costText = ""
-            if maxLv > 0 and curLv < maxLv then
-                costText = " (" .. Config.UpgradeCost(curLv, GameState.stage.chapter) .. "石)"
+            -- 终局强化: 橙装满级且未终局强化
+            local showEndgame = isEndgame
+
+            -- 构建升级按钮内容: 文字标签 + 材料图标
+            local upgBtnChildren = {}
+            local btnLabel
+            if maxLv <= 0 then
+                btnLabel = "无法升级"
+            elseif showEndgame then
+                btnLabel = "终局强化"
+            elseif curLv >= maxLv then
+                btnLabel = "已满级"
+            else
+                btnLabel = "强化 Lv." .. curLv .. "→" .. (curLv + 1)
             end
-            local btnText = maxLv <= 0 and "无法升级" or (curLv >= maxLv and "已满级" or ("强化 Lv." .. curLv .. "→" .. (curLv + 1) .. costText))
+            table.insert(upgBtnChildren, UI.Label {
+                text = btnLabel, fontSize = 11,
+                fontColor = { 255, 255, 255, 240 },
+                pointerEvents = "none",
+            })
+
+            -- 材料消耗图标 (仅可升级时显示)
+            if maxLv > 0 and (curLv < maxLv or showEndgame) then
+                local costEntry = Config.UpgradeCost(equipped.qualityIdx, curLv)
+                if costEntry then
+                    -- 金币图标
+                    if costEntry.gold and costEntry.gold > 0 then
+                        table.insert(upgBtnChildren, UI.Panel {
+                            width = 14, height = 14, marginLeft = 6,
+                            backgroundImage = Config.GOLD_ICON,
+                            backgroundFit = "contain",
+                            pointerEvents = "none",
+                        })
+                        table.insert(upgBtnChildren, UI.Label {
+                            text = tostring(costEntry.gold), fontSize = 10,
+                            fontColor = { 255, 215, 0, 230 }, marginLeft = 1,
+                            pointerEvents = "none",
+                        })
+                    end
+                    -- 材料图标
+                    if costEntry.mats then
+                        for matId, amt in pairs(costEntry.mats) do
+                            local matDef = Config.MATERIAL_MAP and Config.MATERIAL_MAP[matId]
+                            local iconPath = Config.MATERIAL_ICON_PATHS[matId]
+                            local mc = matDef and matDef.color or { 200, 200, 200 }
+                            if iconPath then
+                                table.insert(upgBtnChildren, UI.Panel {
+                                    width = 14, height = 14, marginLeft = 5,
+                                    backgroundImage = iconPath,
+                                    backgroundFit = "contain",
+                                    pointerEvents = "none",
+                                })
+                            end
+                            table.insert(upgBtnChildren, UI.Label {
+                                text = tostring(amt), fontSize = 10,
+                                fontColor = { mc[1], mc[2], mc[3], 230 }, marginLeft = 1,
+                                pointerEvents = "none",
+                            })
+                        end
+                    end
+                end
+            end
+
             table.insert(actionBtns, UI.Button {
-                text = btnText,
                 height = 30, fontSize = 12,
                 flexGrow = 1, flexBasis = 0,
+                flexDirection = "row", alignItems = "center", justifyContent = "center",
                 backgroundColor = canUp and { 50, 120, 220, 230 } or { 60, 65, 75, 200 },
+                children = upgBtnChildren,
                 onClick = Utils.Debounce(function()
                     if not canUp then return end
                     local ok, msg = GameState.UpgradeEquip(slotId)
                     if ok then
+                        local eqName = GameState.equipment[slotId] and GameState.equipment[slotId].name or "装备"
+                        FloatTip.Upgrade(eqName .. " " .. (msg or "升级成功"))
                         -- 清除身份后重新打开，避免 toggle 逻辑误关
                         shared.compareSlotId = nil
                         Parent.ShowCompare(slotId, nil, "equipped")
@@ -848,14 +910,16 @@ function InventoryCompare.Install(Parent, shared)
                     end
                     local item = GameState.equipment[slotId]
                     if not item then return end
+                    local itemName = item.name or "装备"
                     table.insert(GameState.inventory, item)
                     GameState.equipment[slotId] = nil
                     SaveSystem.SaveNow()
                     shared.gridDirty = true
+                    FloatTip.Equip("已卸下 " .. itemName)
                     Parent.CloseCompare()
                     Parent.Refresh()
                     require("ui.TabBar").MarkAllDirty()
-                    Toast.Success("已卸下 " .. (item.name or "装备"))
+                    Toast.Success("已卸下 " .. itemName)
                 end, 0.3),
             })
 
@@ -961,8 +1025,10 @@ function InventoryCompare.Install(Parent, shared)
                 text = "穿戴", height = 28, fontSize = 11, variant = "primary",
                 flexGrow = 1, flexBasis = 0,
                 onClick = Utils.Debounce(function()
+                    local itemName = GameState.inventory[invIndex] and GameState.inventory[invIndex].name or "装备"
                     GameState.EquipItem(invIndex)
                     SaveSystem.MarkDirty()
+                    FloatTip.Equip("已穿戴 " .. itemName)
                     Parent.CloseCompare()
                     Parent.Refresh()
                     require("ui.TabBar").MarkAllDirty()
@@ -980,9 +1046,18 @@ function InventoryCompare.Install(Parent, shared)
                         InventoryCompare.ShowDecomposeConfirm(item, invIndex)
                         return
                     end
-                    local gold, stones = GameState.DecomposeItem(invIndex)
-                    if gold > 0 or stones > 0 then
-                        print("分解获得 " .. gold .. " 金币, " .. stones .. " 强化石")
+                    local itemName = item and item.name or "装备"
+                    local gold, mats = GameState.DecomposeItem(invIndex)
+                    if gold > 0 or (mats and next(mats)) then
+                        local matParts = {}
+                        if mats then
+                            for matId, amt in pairs(mats) do
+                                local def = Config.MATERIAL_MAP and Config.MATERIAL_MAP[matId]
+                                table.insert(matParts, amt .. (def and def.name or matId))
+                            end
+                        end
+                        FloatTip.Decompose("分解 " .. itemName .. " → " .. table.concat(matParts, " + "))
+                        print("分解获得 " .. gold .. " 金币, " .. table.concat(matParts, " + "))
                         SaveSystem.MarkDirty()
                     end
                     Parent.CloseCompare()
@@ -1636,9 +1711,18 @@ function InventoryCompare.Install(Parent, shared)
                                     backgroundColor = { 160, 50, 50, 220 },
                                     onClick = function()
                                         InventoryCompare.CloseDecomposeConfirm()
-                                        local gold, stones = GameState.DecomposeItem(invIndex)
-                                        if gold > 0 or stones > 0 then
-                                            print("分解获得 " .. gold .. " 金币, " .. stones .. " 强化石")
+                                        local itemName = item.name or "装备"
+                                        local gold, mats = GameState.DecomposeItem(invIndex)
+                                        if gold > 0 or (mats and next(mats)) then
+                                            local matParts = {}
+                                            if mats then
+                                                for matId, amt in pairs(mats) do
+                                                    local def = Config.MATERIAL_MAP and Config.MATERIAL_MAP[matId]
+                                                    table.insert(matParts, amt .. (def and def.name or matId))
+                                                end
+                                            end
+                                            FloatTip.Decompose("分解 " .. itemName .. " → " .. table.concat(matParts, " + "))
+                                            print("分解获得 " .. gold .. " 金币, " .. table.concat(matParts, " + "))
                                             SaveSystem.MarkDirty()
                                         end
                                         Parent.CloseCompare()

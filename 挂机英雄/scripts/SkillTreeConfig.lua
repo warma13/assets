@@ -1007,13 +1007,6 @@ function SkillTreeConfig.CanLearnEnhance(enhanceId, getLevel, totalSpent)
         end
     end
 
-    -- 检查同线互斥: 同一条线内只能选1个
-    for _, enh in ipairs(line) do
-        if enh.id ~= enhanceId and getLevel(enh.id) > 0 then
-            return false, "同增强线已选择: " .. enh.name
-        end
-    end
-
     return true, nil
 end
 

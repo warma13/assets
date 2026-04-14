@@ -8,6 +8,7 @@ local WorldBossPanel = require("ui.WorldBossPanel")
 local ResourceDungeonPanel = require("ui.ResourceDungeonPanel")
 local SetDungeonPanel = require("ui.SetDungeonPanel")
 
+
 local ChallengePanel = {}
 
 ---@type Widget
@@ -49,6 +50,8 @@ end
 function ChallengePanel.SetSetDungeonStartCallback(fn)
     SetDungeonPanel.SetStartCallback(fn)
 end
+
+
 
 function ChallengePanel.IsOpen()
     return overlay_ ~= nil
@@ -132,6 +135,7 @@ function ChallengePanel.Build()
             tabBtn("无尽试炼", "trial"),
             tabBtn("世界Boss", "boss"),
             tabBtn("折光矿脉", "mine"),
+
             -- tabBtn("套装秘境", "set"),  -- 暂时隐藏，后续完善
             UI.Panel { flexGrow = 1 },  -- 右侧弹性占位
             -- 关闭按钮
@@ -162,6 +166,7 @@ function ChallengePanel.Build()
         ResourceDungeonPanel.BuildContent(contentArea_, closeFn)
     elseif activeTab_ == "set" then
         SetDungeonPanel.BuildContent(contentArea_, closeFn)
+
     end
 
     overlay_ = UI.Panel {

@@ -156,14 +156,53 @@ end
 -- 装备升级
 -- ============================================================================
 
---- 升级每级所需强化石 (v4.0: 50级曲线, 更平缓)
+--- (旧版兼容) 升级每级所需强化石总量 (数值仅用于存档迁移计算)
 ---@param level number 当前等级(升之前), 从 0 开始
 ---@param chapter number|nil 装备所属章节, 默认1
 ---@return number 强化石数量
-function Config.UpgradeCost(level, chapter)
+function Config.UpgradeStoneCostLegacy(level, chapter)
     local base = math.max(2, math.floor(2 + level * 0.8 + level * level * 0.03))
     local ch = chapter or 1
     return math.floor(base * ch)
+end
+
+--- 升级所需消耗 (v5.0: 查表, 4次固定消耗)
+--- @param qualityIdx number 装备品质索引 (2=绿, 3=蓝, 4=紫, 5=橙)
+--- @param upgradeLv number 当前升级次数 (0-3 对应第1-4次, 4=终局强化)
+--- @return table { gold = N, mats = { [matId] = amount } } | nil
+function Config.UpgradeCost(qualityIdx, upgradeLv)
+    local lv = (upgradeLv or 0) + 1  -- 转为 1-based 索引
+
+    -- 终局强化 (第5次, 仅橙色)
+    if lv == 5 and qualityIdx == 5 then
+        return Config.UPGRADE_ENDGAME
+    end
+
+    local qualityCosts = Config.UPGRADE_COSTS[qualityIdx]
+    if not qualityCosts or not qualityCosts[lv] then return nil end
+    return qualityCosts[lv]
+end
+
+--- (旧版兼容) 升级每级所需材料表 (公式计算, 仅存档迁移用)
+---@param level number 当前等级(升之前), 从 0 开始
+---@param chapter number|nil 装备所属章节, 默认1
+---@return table { [materialId] = amount }
+function Config.UpgradeCostLegacy(level, chapter)
+    local ch = chapter or 1
+    local base = math.max(2, math.floor(2 + level * 0.8 + level * level * 0.03))
+    local amount = math.floor(base * ch)
+    local matId = "iron"
+    for _, tier in ipairs(Config.UPGRADE_MATERIAL_TIERS) do
+        if level >= tier.minLv and level < tier.maxLv then
+            matId = tier.matId
+            break
+        end
+    end
+    local result = { [matId] = amount }
+    if level >= Config.UPGRADE_ABYSS_HEART_LEVEL then
+        result.abyssHeart = 1
+    end
+    return result
 end
 
 -- ============================================================================
@@ -256,11 +295,23 @@ function Config.GetForgeGoldCost(scaleMul, lockSlot)
     return math.floor(base * math.sqrt(scaleMul))
 end
 
---- 计算锻造强化石消耗
+--- 计算锻造强化石消耗 (旧版兼容)
 ---@param lockSlot boolean 是否锁定部位
 ---@return number stoneCost
 function Config.GetForgeStoneCost(lockSlot)
     return lockSlot and Config.FORGE_STONE_COST_LOCK or Config.FORGE_STONE_COST
+end
+
+--- 计算锻造材料消耗 (v5.0: D4多材料)
+---@param lockSlot boolean 是否锁定部位
+---@return table { [materialId] = amount }
+function Config.GetForgeMaterialCost(lockSlot)
+    local src = lockSlot and Config.FORGE_MATERIAL_COST_LOCK or Config.FORGE_MATERIAL_COST
+    local result = {}
+    for k, v in pairs(src) do
+        result[k] = v
+    end
+    return result
 end
 
 -- ============================================================================

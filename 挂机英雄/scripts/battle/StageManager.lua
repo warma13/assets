@@ -14,6 +14,7 @@ local GameMode        = require("GameMode")
 local Utils           = require("Utils")
 local DailyRewards    = require("DailyRewards")
 local DropManager     = require("battle.DropManager")
+local FloatTip        = require("ui.FloatTip")
 
 local StageManager = {}
 
@@ -134,7 +135,8 @@ function StageManager.NextWave(bs)
         if stageCfg.reward.guaranteeEquipQuality then
             local equip = StageManager.GenerateGuaranteedEquip(
                 stageCfg.reward.guaranteeEquipQuality, gs.chapter)
-            GameState.AddToInventory(equip)
+            local _, decompInfo = GameState.AddToInventory(equip)
+            if decompInfo then FloatTip.Decompose(decompInfo) end
         end
         print("[BattleSystem] Stage " .. gs.chapter .. "-" .. gs.stage .. " cleared!")
         -- 通关时即时存档

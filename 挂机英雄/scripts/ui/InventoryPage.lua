@@ -8,6 +8,7 @@ local GameState = require("GameState")
 local SaveSystem = require("SaveSystem")
 local Colors = require("ui.Colors")
 local Utils = require("Utils")
+local FloatTip = require("ui.FloatTip")
 
 local InventoryPage = {}
 
@@ -23,15 +24,21 @@ local decompOrangeOverlay_ = nil   -- 分解橙色确认浮层
 local gemDetailOverlay_ = nil      -- 宝石详情浮窗
 ---@type Widget
 local gemDiscardConfirm_ = nil     -- 宝石丢弃确认弹窗
+---@type Widget
+local matDetailOverlay_ = nil      -- 材料详情浮窗
+local matDetailId_ = nil           -- 当前展示的材料 ID（用于 toggle）
+---@type Widget
+local matDiscardConfirm_ = nil     -- 材料丢弃确认弹窗
 local skipGemDiscardConfirm_ = false  -- 本次登录不再提示
 
 local decompPanelVisible_ = false
 local decompToggleTime_ = 0
-local currentTab_ = "bag"  -- "bag" | "gem"
+local currentTab_ = "bag"  -- "bag" | "mat" | "gem"
 
 -- 数据快照，用于检测是否需要重建格子
 local lastInvCount_ = -1
 local lastStoneCount_ = -1
+local lastMatKey_ = ""
 local lastDecompVis_ = false
 local lastAutoDecomp_ = 0
 local lastAutoKeepSets_ = true
@@ -221,6 +228,8 @@ function InventoryPage.Create()
                     UI.Panel { id = "decomp_panel", width = "100%", marginBottom = 4 },
                     -- 装备格子
                     UI.Panel { id = "inv_grid", flexDirection = "row", flexWrap = "wrap", gap = 4, width = "100%" },
+                    -- 材料格子
+                    UI.Panel { id = "mat_grid", flexDirection = "row", flexWrap = "wrap", gap = 4, width = "100%" },
                     -- 宝石格子
                     UI.Panel { id = "gem_grid", flexDirection = "row", flexWrap = "wrap", gap = 4, width = "100%" },
                 },
@@ -242,51 +251,47 @@ local function RebuildTabs()
     if not tabsPanel then return end
     tabsPanel:ClearChildren()
 
-    local isBag = currentTab_ == "bag"
     local bagText = "背包 " .. #GameState.inventory .. "/" .. GameState.GetInventorySize()
     local gemText = "宝石 " .. GameState.GetGemBagUsedSlots() .. "/" .. GameState.GetGemBagSize()
 
-    -- 背包 Tab
-    tabsPanel:AddChild(UI.Panel {
-        flexGrow = 1, height = 30,
-        backgroundColor = isBag and { 60, 70, 100, 200 } or { 30, 35, 50, 150 },
-        borderColor = isBag and { 100, 120, 200, 220 } or { 50, 60, 75, 100 },
-        borderWidth = isBag and 1 or 0,
-        borderRadius = 4,
-        alignItems = "center", justifyContent = "center",
-        onClick = function()
-            if currentTab_ ~= "bag" then
-                currentTab_ = "bag"
-                decompPanelVisible_ = false
-                shared_.gridDirty = true
-                InventoryPage.Refresh()
-            end
-        end,
-        children = {
-            UI.Label { text = bagText, fontSize = 12, fontColor = isBag and { 220, 230, 255, 255 } or { 140, 150, 170, 180 }, pointerEvents = "none" },
-        },
-    })
+    -- 统计材料占用格子数（含溢出堆叠）
+    local matUsed = 0
+    for _, def in ipairs(Config.MATERIAL_DEFS) do
+        local amt = GameState.GetMaterial(def.id) or 0
+        if amt > 0 then
+            matUsed = matUsed + math.ceil(amt / 999)
+        end
+    end
+    local matText = "材料 " .. matUsed .. "/40"
 
-    -- 宝石 Tab
-    tabsPanel:AddChild(UI.Panel {
-        flexGrow = 1, height = 30,
-        backgroundColor = (not isBag) and { 60, 70, 100, 200 } or { 30, 35, 50, 150 },
-        borderColor = (not isBag) and { 100, 120, 200, 220 } or { 50, 60, 75, 100 },
-        borderWidth = (not isBag) and 1 or 0,
-        borderRadius = 4,
-        alignItems = "center", justifyContent = "center",
-        onClick = function()
-            if currentTab_ ~= "gem" then
-                currentTab_ = "gem"
-                decompPanelVisible_ = false
-                shared_.gridDirty = true
-                InventoryPage.Refresh()
-            end
-        end,
-        children = {
-            UI.Label { text = gemText, fontSize = 12, fontColor = (not isBag) and { 220, 230, 255, 255 } or { 140, 150, 170, 180 }, pointerEvents = "none" },
-        },
-    })
+    local tabs = {
+        { key = "bag", text = bagText },
+        { key = "mat", text = matText },
+        { key = "gem", text = gemText },
+    }
+    for _, tab in ipairs(tabs) do
+        local active = currentTab_ == tab.key
+        tabsPanel:AddChild(UI.Panel {
+            flexGrow = 1, height = 30,
+            backgroundColor = active and { 60, 70, 100, 200 } or { 30, 35, 50, 150 },
+            borderColor = active and { 100, 120, 200, 220 } or { 50, 60, 75, 100 },
+            borderWidth = active and 1 or 0,
+            borderRadius = 4,
+            alignItems = "center", justifyContent = "center",
+            onClick = function()
+                if currentTab_ ~= tab.key then
+                    currentTab_ = tab.key
+                    decompPanelVisible_ = false
+                    shared_.gridDirty = true
+                    InventoryPage.CloseMatDetail()
+                    InventoryPage.Refresh()
+                end
+            end,
+            children = {
+                UI.Label { text = tab.text, fontSize = 12, fontColor = active and { 220, 230, 255, 255 } or { 140, 150, 170, 180 }, pointerEvents = "none" },
+            },
+        })
+    end
 end
 
 --- 构建工具行（背包Tab: 强化石+按钮 / 宝石Tab: 棱镜）
@@ -300,8 +305,7 @@ local function RebuildToolbar()
             flexDirection = "row", gap = 6, width = "100%",
             flexWrap = "wrap", alignItems = "center",
             children = {
-                UI.Panel { width = 12, height = 12, backgroundImage = "Textures/icon_stone.png", backgroundFit = "contain" },
-                UI.Label { id = "stone_count", text = Utils.FormatNumber(GameState.GetStone()), fontSize = 10, fontColor = { 180, 220, 255, 200 } },
+
                 UI.Button {
                     text = "套装", height = 26, fontSize = 11,
                     backgroundColor = { 80, 60, 120, 200 },
@@ -352,6 +356,28 @@ local function RebuildToolbar()
                 },
             },
         })
+    elseif currentTab_ == "mat" then
+        -- 材料Tab: 各材料图标+数量概览
+        local matChildren = {}
+        for _, def in ipairs(Config.MATERIAL_DEFS) do
+            local amt = GameState.GetMaterial(def.id) or 0
+            local c = def.color
+            table.insert(matChildren, UI.Panel {
+                width = 14, height = 14,
+                backgroundImage = Config.MATERIAL_ICON_PATHS[def.id],
+                backgroundFit = "contain",
+            })
+            table.insert(matChildren, UI.Label {
+                text = Utils.FormatNumber(amt),
+                fontSize = 9,
+                fontColor = { c[1], c[2], c[3], amt > 0 and 220 or 100 },
+                marginRight = 6,
+            })
+        end
+        toolbar:AddChild(UI.Panel {
+            flexDirection = "row", alignItems = "center", gap = 2, width = "100%", flexWrap = "wrap",
+            children = matChildren,
+        })
     else
         -- 宝石Tab: 散光棱镜 (图标+数量)
         local prismCount = GameState.GetBagItemCount("prism")
@@ -388,14 +414,22 @@ function InventoryPage.Refresh()
 
     -- 检测数据是否有变化，决定是否需要重建格子
     local curInvCount = #GameState.inventory
-    local curStoneCount = GameState.GetStone()
+    local curStoneCount = GameState.GetMaterial("iron")
     local curEquipKey = EquipKey()
     local curDecompVis = decompPanelVisible_
     local curAutoDecomp = table.concat(GameState.autoDecompConfig, ",")
 
+    -- 材料数据快照（各材料数量拼接）
+    local matSnap = {}
+    for _, def in ipairs(Config.MATERIAL_DEFS) do
+        table.insert(matSnap, def.id .. ":" .. (GameState.GetMaterial(def.id) or 0))
+    end
+    local curMatKey = table.concat(matSnap, ",")
+
     -- 检测格子是否为空（首次挂载到 UI 树时需要强制构建）
     local equipGrid = page_:FindById("equip_grid")
     local invGrid = page_:FindById("inv_grid")
+    local matGrid = page_:FindById("mat_grid")
     local gemGrid = page_:FindById("gem_grid")
     local gridsEmpty = (equipGrid and #equipGrid.children == 0)
 
@@ -405,6 +439,7 @@ function InventoryPage.Refresh()
         or curEquipKey ~= lastEquipKey_
         or curDecompVis ~= lastDecompVis_
         or curAutoDecomp ~= lastAutoDecomp_
+        or curMatKey ~= lastMatKey_
         or currentTab_ ~= lastTab_
 
     -- Tab 行始终更新
@@ -417,6 +452,7 @@ function InventoryPage.Refresh()
     shared_.gridDirty = false
     lastInvCount_ = curInvCount
     lastStoneCount_ = curStoneCount
+    lastMatKey_ = curMatKey
     lastDecompVis_ = curDecompVis
     lastAutoDecomp_ = curAutoDecomp
     lastTab_ = currentTab_
@@ -438,6 +474,7 @@ function InventoryPage.Refresh()
 
     -- 非活跃 Tab 的格子清空（无子元素自然不占空间）
     if invGrid and currentTab_ ~= "bag" then invGrid:ClearChildren() end
+    if matGrid and currentTab_ ~= "mat" then matGrid:ClearChildren() end
     if gemGrid and currentTab_ ~= "gem" then gemGrid:ClearChildren() end
 
     -- 分解筛选面板（仅背包Tab）
@@ -477,9 +514,14 @@ function InventoryPage.Refresh()
                                     InventoryPage.ShowDecompOrangeConfirm()
                                     return
                                 end
-                                local gold, cnt, stones = GameState.DecomposeByFilter(qIdx, false)
-                                print("[UI] 分解: " .. cnt .. "件, " .. gold .. "金, " .. stones .. "石")
-                                if cnt > 0 then SaveSystem.MarkDirty() end
+                                local gold, cnt, mats = GameState.DecomposeByFilter(qIdx, false)
+                                local matParts = {}
+                                if mats then for matId, amt in pairs(mats) do local d = Config.MATERIAL_MAP[matId]; table.insert(matParts, amt .. (d and d.name or matId)) end end
+                                print("[UI] 分解: " .. cnt .. "件, " .. gold .. "金, " .. table.concat(matParts, "+"))
+                                if cnt > 0 then
+                                    FloatTip.Decompose("批量分解 " .. cnt .. " 件 → " .. table.concat(matParts, " + "))
+                                    SaveSystem.MarkDirty()
+                                end
                                 decompPanelVisible_ = false
                                 InventoryPage.Refresh()
                             end, 0.5),
@@ -681,6 +723,74 @@ function InventoryPage.Refresh()
                 UI.Label { text = gemExpandCost .. " 魂晶", fontSize = 7, fontColor = canGemExpand and { 160, 80, 255, 180 } or { 80, 70, 100, 120 }, pointerEvents = "none" },
             },
         })
+    end
+
+    -- 材料网格（仅材料Tab时重建，固定40格，支持堆叠溢出）
+    if matGrid and currentTab_ == "mat" then
+        matGrid:ClearChildren()
+        local MAT_BAG_SIZE = 40
+        local MAT_STACK_MAX = 999
+
+        -- 收集有数量的材料，超过999的拆分为多个格子
+        local matList = {}
+        for _, def in ipairs(Config.MATERIAL_DEFS) do
+            local amt = GameState.GetMaterial(def.id) or 0
+            local remaining = amt
+            while remaining > 0 do
+                local stackAmt = math.min(remaining, MAT_STACK_MAX)
+                table.insert(matList, { def = def, amount = stackAmt, total = amt })
+                remaining = remaining - stackAmt
+            end
+        end
+
+        -- 已有材料格子（点击弹出详情）
+        for _, m in ipairs(matList) do
+            local c = m.def.color
+            local matId = m.def.id
+            matGrid:AddChild(UI.Panel {
+                width = 56, height = 60,
+                backgroundColor = { c[1], c[2], c[3], 25 },
+                borderColor = { c[1], c[2], c[3], 120 },
+                borderWidth = 1, borderRadius = 4,
+                alignItems = "center", justifyContent = "center", gap = 1,
+                onClick = function()
+                    InventoryPage.ShowMatDetail(matId)
+                end,
+                children = {
+                    UI.Panel {
+                        width = 32, height = 32,
+                        backgroundImage = Config.MATERIAL_ICON_PATHS[m.def.id],
+                        backgroundFit = "contain",
+                        pointerEvents = "none",
+                    },
+                    UI.Label {
+                        text = m.def.name, fontSize = 7,
+                        fontColor = { c[1], c[2], c[3], 200 },
+                        pointerEvents = "none",
+                    },
+                    UI.Label {
+                        text = "×" .. m.amount, fontSize = 8,
+                        fontColor = { 200, 210, 220, 200 },
+                        pointerEvents = "none",
+                    },
+                },
+            })
+        end
+
+        -- 空占位格子（点击关闭详情）
+        for _ = #matList + 1, MAT_BAG_SIZE do
+            matGrid:AddChild(UI.Panel {
+                width = 56, height = 60,
+                backgroundColor = { 35, 42, 55, 150 },
+                borderColor = { 50, 60, 75, 100 },
+                borderWidth = 1, borderRadius = 4,
+                alignItems = "center", justifyContent = "center",
+                onClick = function() InventoryPage.CloseMatDetail() end,
+                children = {
+                    UI.Label { text = "-", fontSize = 14, fontColor = { 50, 60, 75, 50 } },
+                },
+            })
+        end
     end
 end
 
@@ -896,6 +1006,353 @@ function InventoryPage.ShowGemBagExpandConfirm()
     if shared_.overlayRoot then
         shared_.overlayRoot:AddChild(gemExpandOverlay_)
     end
+end
+
+-- ============================================================================
+-- 材料丢弃确认弹窗
+-- ============================================================================
+
+function InventoryPage.CloseMatDiscardConfirm()
+    if matDiscardConfirm_ then
+        matDiscardConfirm_:Destroy()
+        matDiscardConfirm_ = nil
+    end
+end
+
+--- 显示材料丢弃确认弹窗
+---@param matId string
+function InventoryPage.ShowMatDiscardConfirm(matId)
+    InventoryPage.CloseMatDiscardConfirm()
+
+    local def = Config.MATERIAL_MAP[matId]
+    if not def then return end
+    local totalAmt = GameState.GetMaterial(matId) or 0
+    if totalAmt <= 0 then return end
+
+    local discardAmt = totalAmt  -- 默认丢弃全部
+    local c = def.color
+
+    local function closeOverlay()
+        InventoryPage.CloseMatDiscardConfirm()
+    end
+
+    -- 数量选择行（-100, -10, 数量, +10, +100）
+    local amtLabelRef = nil
+
+    local function clampAmt(v)
+        return math.max(1, math.min(totalAmt, v))
+    end
+
+    local function mkAdjBtn(label, delta)
+        return UI.Button {
+            text = label, width = 40, height = 26, fontSize = 11,
+            backgroundColor = { 55, 60, 80, 220 },
+            onClick = function()
+                discardAmt = clampAmt(discardAmt + delta)
+                if amtLabelRef then amtLabelRef:SetText(tostring(discardAmt)) end
+            end,
+        }
+    end
+
+    matDiscardConfirm_ = UI.Panel {
+        position = "absolute",
+        left = 0, top = 0, width = "100%", height = "100%",
+        zIndex = 500,
+        backgroundColor = { 0, 0, 0, 160 },
+        justifyContent = "center", alignItems = "center",
+        onClick = function() closeOverlay() end,
+        children = {
+            UI.Panel {
+                width = 270,
+                backgroundColor = { 28, 32, 48, 250 },
+                borderColor = { 180, 60, 60, 200 },
+                borderWidth = 1, borderRadius = 10,
+                padding = 18, gap = 10,
+                alignItems = "center",
+                onClick = function() end,
+                children = {
+                    UI.Label {
+                        text = "丢弃材料",
+                        fontSize = 15, fontWeight = "bold",
+                        fontColor = { 220, 225, 240, 255 },
+                    },
+                    UI.Label {
+                        text = "确认丢弃 " .. def.name .. " ？\n丢弃后无法恢复",
+                        fontSize = 12,
+                        fontColor = { 200, 180, 170, 220 },
+                        textAlign = "center",
+                    },
+                    -- 数量选择
+                    UI.Panel {
+                        flexDirection = "row", alignItems = "center", gap = 6,
+                        children = {
+                            mkAdjBtn("-100", -100),
+                            mkAdjBtn("-10", -10),
+                            UI.Panel {
+                                width = 60, height = 26,
+                                backgroundColor = { 20, 24, 36, 220 },
+                                borderColor = { c[1], c[2], c[3], 120 },
+                                borderWidth = 1, borderRadius = 4,
+                                alignItems = "center", justifyContent = "center",
+                                children = {
+                                    UI.Label {
+                                        id = "__matDiscardAmt",
+                                        text = tostring(discardAmt),
+                                        fontSize = 12, fontWeight = "bold",
+                                        fontColor = { 255, 220, 100, 255 },
+                                    },
+                                },
+                            },
+                            mkAdjBtn("+10", 10),
+                            mkAdjBtn("+100", 100),
+                        },
+                    },
+                    -- 按钮行
+                    UI.Panel {
+                        flexDirection = "row", gap = 16, justifyContent = "center",
+                        children = {
+                            UI.Button {
+                                text = "取消", width = 85, height = 32, fontSize = 12,
+                                backgroundColor = { 60, 65, 80, 200 },
+                                onClick = function() closeOverlay() end,
+                            },
+                            UI.Button {
+                                text = "确认丢弃", variant = "primary", width = 100, height = 32, fontSize = 12,
+                                backgroundColor = { 160, 50, 50, 230 },
+                                onClick = function()
+                                    local cur = GameState.GetMaterial(matId) or 0
+                                    local amt = math.min(discardAmt, cur)
+                                    if amt > 0 then
+                                        GameState.AddMaterial(matId, -amt)
+                                        FloatTip.Show("已丢弃 " .. def.name .. " ×" .. amt, { 255, 140, 100, 255 })
+                                    end
+                                    closeOverlay()
+                                    InventoryPage.CloseMatDetail()
+                                    shared_.gridDirty = true
+                                    InventoryPage.Refresh()
+                                end,
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+    -- 记住数量 label 引用
+    amtLabelRef = matDiscardConfirm_:FindById("__matDiscardAmt")
+
+    if shared_.overlayRoot then
+        shared_.overlayRoot:AddChild(matDiscardConfirm_)
+    end
+end
+
+-- ============================================================================
+-- 材料详情浮窗
+-- ============================================================================
+
+function InventoryPage.CloseMatDetail()
+    if matDetailOverlay_ then
+        matDetailOverlay_:Destroy()
+        matDetailOverlay_ = nil
+    end
+    matDetailId_ = nil
+end
+
+--- 显示材料详情浮窗（复用装备详情视觉风格）
+---@param matId string
+function InventoryPage.ShowMatDetail(matId)
+    -- toggle：再次点击同一材料 → 关闭
+    if matDetailId_ == matId then
+        InventoryPage.CloseMatDetail()
+        return
+    end
+
+    InventoryPage.CloseMatDetail()
+
+    local def = Config.MATERIAL_MAP[matId]
+    if not def then return end
+
+    local c = def.color
+    local totalAmt = GameState.GetMaterial(matId) or 0
+
+    -- 稀有度
+    local rarityNames = {
+        common = "普通", uncommon = "精良", rare = "稀有",
+        legendary = "传说", mythic = "神话",
+    }
+    local rarityColors = {
+        common    = { 180, 180, 180 },
+        uncommon  = { 80, 200, 80 },
+        rare      = { 80, 140, 255 },
+        legendary = { 255, 165, 0 },
+        mythic    = { 255, 80, 120 },
+    }
+    local rarityName = rarityNames[def.rarity] or def.rarity
+    local rc = rarityColors[def.rarity] or { 200, 200, 200 }
+
+    local headerBg = { math.floor(c[1] * 0.25 + 20), math.floor(c[2] * 0.25 + 20), math.floor(c[3] * 0.25 + 20), 250 }
+
+    -- 内容区子元素
+    local contentChildren = {}
+
+    -- 图标 + 名称 + 持有数 + 稀有度
+    table.insert(contentChildren, UI.Panel {
+        flexDirection = "row", alignItems = "center", gap = 8,
+        width = "100%", paddingLeft = 8, paddingRight = 8, paddingTop = 6,
+        children = {
+            UI.Panel {
+                width = 36, height = 36,
+                backgroundColor = { c[1], c[2], c[3], 30 },
+                borderColor = { c[1], c[2], c[3], 80 },
+                borderWidth = 1, borderRadius = 6,
+                alignItems = "center", justifyContent = "center",
+                children = {
+                    UI.Panel {
+                        width = 28, height = 28,
+                        backgroundImage = Config.MATERIAL_ICON_PATHS[matId],
+                        backgroundFit = "contain",
+                        pointerEvents = "none",
+                    },
+                },
+            },
+            UI.Panel {
+                flexGrow = 1, gap = 2,
+                children = {
+                    UI.Label {
+                        text = def.name,
+                        fontSize = 13, fontWeight = "bold",
+                        fontColor = { c[1], c[2], c[3], 255 },
+                    },
+                    UI.Panel {
+                        flexDirection = "row", alignItems = "center", gap = 8,
+                        children = {
+                            UI.Label {
+                                text = "持有 " .. totalAmt,
+                                fontSize = 10,
+                                fontColor = { 255, 215, 0, 230 },
+                            },
+                            UI.Label {
+                                text = rarityName,
+                                fontSize = 9,
+                                fontColor = { rc[1], rc[2], rc[3], 200 },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    })
+
+    -- 分割线
+    table.insert(contentChildren, UI.Panel {
+        width = "100%", height = 1,
+        backgroundColor = { 60, 70, 90, 120 },
+        marginTop = 4, marginBottom = 2,
+    })
+
+    -- 属性行：堆叠上限 / 占用格数
+    local slotsUsed = math.ceil(totalAmt / 999)
+    local statRows = {
+        { label = "堆叠上限", value = "999 / 格" },
+        { label = "占用格数", value = slotsUsed .. " 格" },
+    }
+    for _, row in ipairs(statRows) do
+        table.insert(contentChildren, UI.Panel {
+            flexDirection = "row", alignItems = "center",
+            justifyContent = "space-between", width = "100%",
+            paddingLeft = 10, paddingRight = 10,
+            children = {
+                UI.Label { text = row.label, fontSize = 9, fontColor = { 140, 150, 170, 180 } },
+                UI.Label { text = row.value, fontSize = 9, fontColor = { 190, 195, 200, 220 } },
+            },
+        })
+    end
+
+    -- 分割线
+    table.insert(contentChildren, UI.Panel {
+        width = "100%", height = 1,
+        backgroundColor = { 60, 70, 90, 120 },
+        marginTop = 4, marginBottom = 2,
+    })
+
+    -- 描述
+    table.insert(contentChildren, UI.Label {
+        text = "「" .. (def.desc or "") .. "」",
+        fontSize = 9,
+        fontColor = { 160, 155, 140, 170 },
+        textAlign = "center",
+        paddingLeft = 8, paddingRight = 8,
+        paddingBottom = 4,
+    })
+
+    -- 丢弃按钮
+    if totalAmt > 0 then
+        table.insert(contentChildren, UI.Panel {
+            width = "100%", alignItems = "center", paddingBottom = 8,
+            children = {
+                UI.Button {
+                    text = "丢弃", width = 80, height = 28, fontSize = 11,
+                    backgroundColor = { 120, 45, 45, 200 },
+                    onClick = function()
+                        InventoryPage.ShowMatDiscardConfirm(matId)
+                    end,
+                },
+            },
+        })
+    end
+
+    -- 组装面板（复用装备详情的布局结构）
+    local panelChildren = {
+        -- 标题栏（带颜色背景 + 关闭按钮）
+        UI.Panel {
+            flexDirection = "row", justifyContent = "space-between", alignItems = "center",
+            width = "100%",
+            backgroundColor = headerBg,
+            paddingLeft = 10, paddingRight = 6, paddingTop = 5, paddingBottom = 5,
+            children = {
+                UI.Label { text = "材料详情", fontSize = 12, fontColor = { 200, 210, 230, 245 } },
+                UI.Panel {
+                    width = 24, height = 24,
+                    backgroundColor = { 160, 50, 50, 200 },
+                    borderRadius = 12,
+                    alignItems = "center", justifyContent = "center",
+                    onClick = function() InventoryPage.CloseMatDetail() end,
+                    children = {
+                        UI.Label { text = "✕", fontSize = 12, fontColor = { 255, 255, 255, 240 } },
+                    },
+                },
+            },
+        },
+        -- 内容区
+        UI.Panel {
+            width = "100%", gap = 4,
+            children = contentChildren,
+        },
+    }
+
+    matDetailOverlay_ = UI.Panel {
+        position = "absolute",
+        left = 0, right = 0, bottom = "50%",
+        zIndex = 200,
+        paddingLeft = 8, paddingRight = 8, paddingBottom = 4,
+        children = {
+            UI.Panel {
+                width = "100%",
+                backgroundColor = { 18, 22, 34, 245 },
+                borderColor = { 60, 70, 95, 200 },
+                borderWidth = 1, borderRadius = 8,
+                gap = 4,
+                overflow = "hidden",
+                children = panelChildren,
+            },
+        },
+    }
+
+    if shared_.overlayRoot then
+        shared_.overlayRoot:AddChild(matDetailOverlay_)
+    end
+    matDetailId_ = matId
 end
 
 -- ============================================================================
@@ -1274,9 +1731,14 @@ function InventoryPage.ShowDecompOrangeConfirm()
                                 backgroundColor = count > 0 and { 200, 120, 0, 230 } or { 60, 60, 70, 200 },
                                 onClick = Utils.Debounce(function()
                                     if count <= 0 then return end
-                                    local gold, cnt, stones = GameState.DecomposeByFilter(maxQ, false)
-                                    print("[UI] 分解橙色及以下: " .. cnt .. "件, " .. gold .. "金, " .. stones .. "石")
-                                    if cnt > 0 then SaveSystem.MarkDirty() end
+                                    local gold, cnt, mats = GameState.DecomposeByFilter(maxQ, false)
+                                    local matParts = {}
+                                    if mats then for matId, amt in pairs(mats) do local d = Config.MATERIAL_MAP[matId]; table.insert(matParts, amt .. (d and d.name or matId)) end end
+                                    print("[UI] 分解橙色及以下: " .. cnt .. "件, " .. gold .. "金, " .. table.concat(matParts, "+"))
+                                    if cnt > 0 then
+                                        FloatTip.Decompose("批量分解 " .. cnt .. " 件 → " .. table.concat(matParts, " + "))
+                                        SaveSystem.MarkDirty()
+                                    end
                                     InventoryPage.CloseDecompOrangeConfirm()
                                     decompPanelVisible_ = false
                                     shared_.gridDirty = true

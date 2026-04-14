@@ -20,7 +20,7 @@ local overlay_     = nil
 local visible_     = false
 
 -- 奖励数据（关闭面板后保留，直到成功领取）
-local rewardData_  = nil  -- { gold, exp, equips, orangeEquips, decomposedStones, soulCrystal }
+local rewardData_  = nil  -- { gold, exp, equips, orangeEquips, decomposedMats, soulCrystal }
 local offlineSec_  = 0
 
 -- ============================================================================
@@ -40,7 +40,13 @@ end
 local function MergeReward(existing, new)
     existing.gold             = (existing.gold or 0) + (new.gold or 0)
     existing.exp              = (existing.exp or 0) + (new.exp or 0)
-    existing.decomposedStones = (existing.decomposedStones or 0) + (new.decomposedStones or 0)
+    -- 合并分解材料
+    existing.decomposedMats = existing.decomposedMats or {}
+    if new.decomposedMats then
+        for matId, amt in pairs(new.decomposedMats) do
+            existing.decomposedMats[matId] = (existing.decomposedMats[matId] or 0) + amt
+        end
+    end
     existing.soulCrystal      = (existing.soulCrystal or 0) + (new.soulCrystal or 0)
 
     -- 合并橙装列表，上限10件，溢出分解
@@ -51,8 +57,18 @@ local function MergeReward(existing, new)
             if #existing.orangeEquips < MAX_ORANGE then
                 table.insert(existing.orangeEquips, item)
             else
-                local stones = Config.DECOMPOSE_STONES[item.qualityIdx] or 0
-                existing.decomposedStones = existing.decomposedStones + stones
+                local mats = Config.DECOMPOSE_MATERIALS[item.qualityIdx]
+                if mats then
+                    existing.decomposedMats = existing.decomposedMats or {}
+                    for matId, amt in pairs(mats) do
+                        existing.decomposedMats[matId] = (existing.decomposedMats[matId] or 0) + amt
+                    end
+                end
+                -- 金币产出
+                local dGold = Config.DECOMPOSE_GOLD[item.qualityIdx] or 0
+                if dGold > 0 then
+                    existing.gold = (existing.gold or 0) + dGold
+                end
             end
         end
     end
@@ -162,9 +178,17 @@ function OfflineChest.Show()
         table.insert(rewardRows, RewardRow(ICON_EQUIP, "橙色装备", "+" .. orangeCount .. "件", { 255, 165, 0, 255 }))
     end
 
-    local decompStones = rewardData_.decomposedStones or 0
-    if decompStones > 0 then
-        table.insert(rewardRows, RewardRow(ICON_STONE, "强化石(分解)", "+" .. Utils.FormatNumber(decompStones), { 160, 180, 200, 255 }))
+    -- 分解材料行
+    if rewardData_.decomposedMats then
+        local MatMap = Config.MATERIAL_MAP
+        for matId, amt in pairs(rewardData_.decomposedMats) do
+            if amt > 0 then
+                local def = MatMap and MatMap[matId]
+                local name = def and def.name or matId
+                local clr = def and def.color or { 160, 180, 200, 255 }
+                table.insert(rewardRows, RewardRow(ICON_STONE, name .. "(分解)", "+" .. Utils.FormatNumber(amt), { clr[1], clr[2], clr[3], 255 }))
+            end
+        end
     end
 
     local crystal = rewardData_.soulCrystal or 0
@@ -288,20 +312,28 @@ function OfflineChest.Collect()
 
     -- 发放普通装备到背包
     if rewardData_.equips then
+        local FloatTip = require("ui.FloatTip")
         for _, item in ipairs(rewardData_.equips) do
-            GameState.AddToInventory(item)
+            local _, decompInfo = GameState.AddToInventory(item)
+            if decompInfo then
+                FloatTip.Decompose(decompInfo)
+            end
         end
     end
 
-    -- 发放分解获得的强化石
-    if rewardData_.decomposedStones and rewardData_.decomposedStones > 0 then
-        GameState.AddStone(rewardData_.decomposedStones)
+    -- 发放分解获得的材料
+    if rewardData_.decomposedMats then
+        GameState.AddMaterials(rewardData_.decomposedMats)
     end
 
     -- 橙色装备直接入背包
     if rewardData_.orangeEquips then
         for _, item in ipairs(rewardData_.orangeEquips) do
-            GameState.AddToInventory(item)
+            local _, decompInfo = GameState.AddToInventory(item)
+            if decompInfo then
+                local FloatTip = require("ui.FloatTip")
+                FloatTip.Decompose(decompInfo)
+            end
         end
     end
 
@@ -381,9 +413,17 @@ function OfflineChest.BuildContent(container)
         if orangeCount > 0 then
             table.insert(rewardRows, RewardRow(ICON_EQUIP, "橙色装备", "+" .. orangeCount .. "件", { 255, 165, 0, 255 }))
         end
-        local decompStones = rewardData_.decomposedStones or 0
-        if decompStones > 0 then
-            table.insert(rewardRows, RewardRow(ICON_STONE, "强化石(分解)", "+" .. Utils.FormatNumber(decompStones), { 160, 180, 200, 255 }))
+        -- 分解材料行
+        if rewardData_.decomposedMats then
+            local MatMap = Config.MATERIAL_MAP
+            for matId, amt in pairs(rewardData_.decomposedMats) do
+                if amt > 0 then
+                    local def = MatMap and MatMap[matId]
+                    local name = def and def.name or matId
+                    local clr = def and def.color or { 160, 180, 200, 255 }
+                    table.insert(rewardRows, RewardRow(ICON_STONE, name .. "(分解)", "+" .. Utils.FormatNumber(amt), { clr[1], clr[2], clr[3], 255 }))
+                end
+            end
         end
         local crystal = rewardData_.soulCrystal or 0
         if crystal > 0 then

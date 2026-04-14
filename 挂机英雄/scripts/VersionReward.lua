@@ -563,9 +563,13 @@ function VersionReward.Claim(ver)
         GameState.AddSoulCrystal(rewards.soulCrystal)
     end
 
-    -- 发放强化石
+    -- 发放强化石 (兼容旧版本奖励stone→iron)
     if rewards.stone and rewards.stone > 0 then
         GameState.AddStone(rewards.stone)
+    end
+    -- 发放材料
+    if rewards.materials then
+        GameState.AddMaterials(rewards.materials)
     end
 
     -- 发放背包道具
@@ -644,7 +648,15 @@ function VersionReward.GetRewardDescList(ver)
         table.insert(list, { text = "魂晶 ×" .. r.soulCrystal, color = { 180, 100, 255, 255 } })
     end
     if r.stone and r.stone > 0 then
-        table.insert(list, { text = "强化石 ×" .. r.stone, color = { 160, 180, 200, 255 } })
+        table.insert(list, { text = "锈蚀铁块 ×" .. r.stone, color = { 160, 180, 200, 255 } })
+    end
+    if r.materials then
+        for matId, amt in pairs(r.materials) do
+            local def = Config.MATERIAL_MAP and Config.MATERIAL_MAP[matId]
+            local name = def and def.name or matId
+            local clr = def and def.color or { 160, 180, 200 }
+            table.insert(list, { text = name .. " ×" .. amt, color = { clr[1], clr[2], clr[3], 255 } })
+        end
     end
     if r.bagItems then
         for _, bi in ipairs(r.bagItems) do

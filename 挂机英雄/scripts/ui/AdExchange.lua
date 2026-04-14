@@ -86,8 +86,10 @@ local function GiveReward(rewardCfg)
         GameState.AddGold(rewardCfg.amount)
     elseif rewardCfg.id == "soulCrystal" then
         GameState.AddSoulCrystal(rewardCfg.amount)
-    elseif rewardCfg.id == "stone" then
-        GameState.AddStone(rewardCfg.amount)
+    elseif rewardCfg.id == "stone" or rewardCfg.id == "iron" then
+        GameState.AddMaterial("iron", rewardCfg.amount)
+    elseif rewardCfg.id == "crystal" then
+        GameState.AddMaterial("crystal", rewardCfg.amount)
     end
 end
 

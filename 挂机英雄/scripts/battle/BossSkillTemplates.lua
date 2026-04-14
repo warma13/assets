@@ -4,12 +4,13 @@
 -- 新 Boss (有 phases 字段) 走此系统, 旧 Boss 不受影响
 -- ============================================================================
 
-local Config        = require("Config")
-local GameState     = require("GameState")
-local StageConfig   = require("StageConfig")
-local Particles     = require("battle.Particles")
-local CombatUtils   = require("battle.CombatUtils")
-local ThreatSystem  = require("battle.ThreatSystem")
+local Config           = require("Config")
+local GameState        = require("GameState")
+local StageConfig      = require("StageConfig")
+local Particles        = require("battle.Particles")
+local CombatUtils      = require("battle.CombatUtils")
+local ThreatSystem     = require("battle.ThreatSystem")
+local MonsterFamilies  = require("MonsterFamilies")
 
 local BossSkillTemplates = {}
 
@@ -1702,11 +1703,23 @@ BossSkillTemplates.RegisterTemplate("SUM_minion", {
 })
 
 function BossSkillTemplates._SummonMinions(bs, enemy, cfg)
-    local sTemplate = StageConfig.MONSTERS[cfg.monsterId]
-    if not sTemplate then return end
-
     local gs = GameState.stage
     local scaleMul = StageConfig.GetScaleMul(gs.chapter, gs.stage)
+
+    -- 优先用 Boss 同家族的 swarm 成员，fallback 到 cfg.monsterId
+    local sTemplate = nil
+    local templateId = cfg.monsterId
+    if enemy.familyId then
+        local familyDef = MonsterFamilies.Get(enemy.familyId)
+        if familyDef and familyDef.members and familyDef.members.swarm then
+            sTemplate = MonsterFamilies.Resolve(enemy.familyId, "swarm", gs.chapter, nil, nil)
+            templateId = enemy.familyId .. "_swarm"
+        end
+    end
+    if not sTemplate then
+        sTemplate = StageConfig.MONSTERS[cfg.monsterId]
+    end
+    if not sTemplate then return end
 
     for _ = 1, (cfg.count or 3) do
         local sHp = math.floor(sTemplate.hp * scaleMul)
@@ -1719,7 +1732,7 @@ function BossSkillTemplates._SummonMinions(bs, enemy, cfg)
             x = sx, y = sy,
             hp = sHp, maxHp = sHp, atk = sAtk,
             speed = sTemplate.speed, radius = sTemplate.radius or 16,
-            expDrop = math.floor(sTemplate.expDrop * scaleMul),
+            expDrop = math.floor((sTemplate.expDrop or 3) * scaleMul),
             goldMin = sTemplate.goldDrop and math.floor(sTemplate.goldDrop[1] * math.sqrt(scaleMul)) or 0,
             goldMax = sTemplate.goldDrop and math.floor(sTemplate.goldDrop[2] * math.sqrt(scaleMul)) or 0,
             color = { sTemplate.color[1], sTemplate.color[2], sTemplate.color[3] },
@@ -1733,9 +1746,10 @@ function BossSkillTemplates._SummonMinions(bs, enemy, cfg)
             defReduceRate = 0, defReduceTimer = 0,
             elemWeakenRate = 0, elemWeakenTimer = 0,
             reactionDot = nil,
-            templateId = cfg.monsterId,
+            templateId = templateId,
             enraged = false,
             resist = sTemplate.resist,
+            _isSummon = true,
         })
     end
     Particles.SpawnReactionText(bs.particles, enemy.x, enemy.y - (enemy.radius or 16) - 20, "召唤!", { 180, 140, 255 })

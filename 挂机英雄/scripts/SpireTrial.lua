@@ -181,6 +181,12 @@ function M.Complete()
         print("[SpireTrial] World Tier unlocked: " .. def.unlocksWT .. " (" .. WorldTierConfig.Get(def.unlocksWT).name .. ")")
     end
 
+    -- 试炼通关掉落: 裂隙残响 (按试炼编号递增)
+    local riftDrop = state_.spireId * 2  -- spire1=2, spire2=4, spire3=6
+    local eternalDrop = state_.spireId   -- spire1=1, spire2=2, spire3=3
+    GameState.AddMaterials({ riftEcho = riftDrop, eternal = eternalDrop })
+    print("[SpireTrial] Completion reward: riftEcho=" .. riftDrop .. " eternal=" .. eternalDrop)
+
     SaveSystem.MarkDirty()
     state_.active = false
     print("[SpireTrial] Spire " .. state_.spireId .. " completed!")

@@ -48,8 +48,17 @@ function GameState.Init()
         GameState.equipment[slot.id] = nil
     end
 
-    -- 材料
-    GameState.materials = { stone = 0, soulCrystal = 0 }  -- stone = 强化石, soulCrystal = 魂晶
+    -- 材料 (v5.0: D4多材料体系)
+    GameState.materials = {
+        iron = 0,           -- 锈蚀铁块 (白/绿装分解)
+        crystal = 0,        -- 暗纹晶体 (蓝装分解)
+        wraith = 0,         -- 怨魂碎片 (紫装分解)
+        eternal = 0,        -- 永夜之魂 (橙装分解)
+        abyssHeart = 0,     -- 深渊之心 (深渊Boss)
+        riftEcho = 0,       -- 裂隙残响 (秘境/世界Boss)
+        soulCrystal = 0,    -- 魂晶 (背包扩容等)
+        forestDew = 0,      -- 森之露 (魔力之森独占, 升级魔力之源)
+    }
 
     -- 背包扩容次数
     GameState.expandCount = 0
@@ -169,6 +178,27 @@ function GameState.Init()
         savedStage = nil,    -- 进入前保存的章节进度
     }
 
+    -- 魔力之森
+    GameState.manaForest = {
+        attemptsToday   = 0,     -- 今日已用次数
+        bonusAttempts   = 0,     -- 广告额外次数（已用）
+        lastDate        = "",    -- 上次重置日期
+        totalRuns       = 0,     -- 历史总通关次数
+        bestEssence     = 0,     -- 单次最高精华记录
+        totalEssence    = 0,     -- 历史总精华收集
+        firstClearToday = false, -- 今日是否已首通
+    }
+
+    -- 魔力之源 (蓝药水)
+    GameState.manaPotion = {
+        count = 0,              -- 当前瓶数
+        level = 0,              -- 升级次数 (0~10)
+        autoUse = false,        -- 是否自动喝药
+        freeRegenEnd = 0,       -- 无消耗回复到期时间戳 (os.time)
+        adWatchCount = 0,       -- 今日已看广告次数
+        adWatchDate = "",       -- 上次看广告日期
+    }
+
     -- 初始化HP和法力
     GameState.ResetHP()
     GameState.ResetMana()
@@ -185,7 +215,7 @@ function GameState.Init()
         { "maxPower", "maxChapter", "maxStage" }
     )
     GameState.materials = SecureNum.protect(GameState.materials,
-        { "stone", "soulCrystal" }
+        { "iron", "crystal", "wraith", "eternal", "abyssHeart", "riftEcho", "soulCrystal", "forestDew" }
     )
     GameState.endlessTrial = SecureNum.protect(GameState.endlessTrial,
         { "floor", "maxFloor", "clearedFloor", "totalGold", "totalExp" }
@@ -235,7 +265,7 @@ end
 
 --- 计算离线挂机奖励
 --- @param offlineSeconds number 离线秒数 (已经被 SaveSystem 夹紧到 300~28800)
---- @return table { gold=N, exp=N, equips={item,...}, orangeEquips={item,...}, decomposedStones=N, soulCrystal=N }
+--- @return table { gold=N, exp=N, equips={item,...}, orangeEquips={item,...}, decomposedMats={[matId]=N,...}, soulCrystal=N }
 function GameState.CalculateOfflineReward(offlineSeconds)
     local minutes = offlineSeconds / 60
 
@@ -260,7 +290,7 @@ function GameState.CalculateOfflineReward(offlineSeconds)
     -- ── 离线Boss爆装 (只保留橙装, 非橙直接分解) ──
     -- 按最高已通关Boss关算, 幸运值使用登录时的值(离线期间属性不变)
     local orangeEquips = {}
-    local decomposedStones = 0
+    local decomposedMats = {}
     local soulCrystal = 0
 
     local bossCfg, bossCh = FindHighestClearedBossStage()
@@ -279,9 +309,17 @@ function GameState.CalculateOfflineReward(offlineSeconds)
                 -- 橙装且未达上限 → 保留
                 table.insert(orangeEquips, item)
             else
-                -- 非橙装, 或橙装已达上限 → 分解为强化石
-                local stones = Config.DECOMPOSE_STONES[item.qualityIdx] or 0
-                decomposedStones = decomposedStones + stones
+                -- 非橙装, 或橙装已达上限 → 分解为材料+金币
+                local mats = Config.DECOMPOSE_MATERIALS[item.qualityIdx]
+                if mats then
+                    for matId, amt in pairs(mats) do
+                        decomposedMats[matId] = (decomposedMats[matId] or 0) + amt
+                    end
+                end
+                local dGold = Config.DECOMPOSE_GOLD[item.qualityIdx] or 0
+                if dGold > 0 then
+                    gold = gold + dGold
+                end
             end
         end
 
@@ -296,7 +334,7 @@ function GameState.CalculateOfflineReward(offlineSeconds)
         exp              = exp,
         equips           = {},  -- 不再生成小怪装备
         orangeEquips     = orangeEquips,
-        decomposedStones = decomposedStones,
+        decomposedMats   = decomposedMats,
         soulCrystal      = soulCrystal,
     }
 end
@@ -348,6 +386,107 @@ end
 
 --- 元素精灵列表
 GameState.spirits = {}
+
+-- ============================================================================
+-- 魔力之源 (蓝药水)
+-- ============================================================================
+
+--- 基础恢复比例 30%，每级 +3%，最高 10 级 = 60%
+function GameState.GetManaPotionPct()
+    local lv = GameState.manaPotion.level or 0
+    return 0.30 + lv * 0.03
+end
+
+--- 是否处于无消耗回复状态
+function GameState.IsManaPotionFreeRegen()
+    return (GameState.manaPotion.freeRegenEnd or 0) > os.time()
+end
+
+--- 获取无消耗剩余秒数
+function GameState.GetFreeRegenRemain()
+    local remain = (GameState.manaPotion.freeRegenEnd or 0) - os.time()
+    return remain > 0 and remain or 0
+end
+
+local MANA_POTION_CD = 10  -- 喝药冷却时间(秒)
+
+--- 喝药是否在冷却中
+function GameState.IsManaPotionOnCD()
+    return (GameState.manaPotion.cdEnd or 0) > time:GetElapsedTime()
+end
+
+--- 获取喝药剩余冷却秒数
+function GameState.GetManaPotionCDRemain()
+    local remain = (GameState.manaPotion.cdEnd or 0) - time:GetElapsedTime()
+    return remain > 0 and remain or 0
+end
+
+--- 使用一瓶魔力之源 (free=true 时不消耗瓶数)
+--- @param free boolean|nil 是否免费
+--- @return boolean 是否成功使用
+function GameState.UseManaPotionOnce(free)
+    if GameState.IsManaPotionOnCD() then return false end
+    local maxMana = GameState.GetMaxMana()
+    if GameState.playerMana >= maxMana then return false end
+    if not free then
+        if (GameState.manaPotion.count or 0) <= 0 then return false end
+        GameState.manaPotion.count = GameState.manaPotion.count - 1
+    end
+    local heal = maxMana * GameState.GetManaPotionPct()
+    GameState.playerMana = math.min(maxMana, GameState.playerMana + heal)
+    GameState.manaPotion.cdEnd = time:GetElapsedTime() + MANA_POTION_CD
+    local FloatTip = require("ui.FloatTip")
+    FloatTip.Show("魔力之源 +" .. math.floor(heal) .. " MP", { 100, 180, 255, 255 })
+    return true
+end
+
+local MANA_POTION_AD_DAILY_MAX = 24
+
+--- 今日剩余广告次数
+function GameState.GetManaPotionAdRemain()
+    local today = os.date("%Y-%m-%d", os.time())
+    if (GameState.manaPotion.adWatchDate or "") ~= today then
+        return MANA_POTION_AD_DAILY_MAX
+    end
+    return math.max(0, MANA_POTION_AD_DAILY_MAX - (GameState.manaPotion.adWatchCount or 0))
+end
+
+--- 获取魔力之源升级所需森之露数量 (nil = 已满级)
+---@return number|nil
+function GameState.GetManaPotionUpgradeCost()
+    local lv = GameState.manaPotion.level or 0
+    local costs = Config.MANA_POTION_UPGRADE_COSTS
+    if lv >= #costs then return nil end  -- 已满级
+    return costs[lv + 1]
+end
+
+--- 使用森之露升级魔力之源
+---@return boolean success
+---@return string|nil errMsg
+function GameState.UpgradeManaPotionWithDew()
+    local cost = GameState.GetManaPotionUpgradeCost()
+    if not cost then return false, "已达最高等级" end
+    local have = GameState.materials.forestDew or 0
+    if have < cost then return false, "森之露不足" end
+    GameState.materials.forestDew = have - cost
+    GameState.manaPotion.level = (GameState.manaPotion.level or 0) + 1
+    return true, nil
+end
+
+--- 记录一次广告观看，增加 1 小时免费回复
+function GameState.RecordManaPotionAd()
+    local today = os.date("%Y-%m-%d", os.time())
+    if (GameState.manaPotion.adWatchDate or "") ~= today then
+        GameState.manaPotion.adWatchCount = 0
+        GameState.manaPotion.adWatchDate = today
+    end
+    GameState.manaPotion.adWatchCount = (GameState.manaPotion.adWatchCount or 0) + 1
+    -- 叠加 1 小时
+    local now = os.time()
+    local curEnd = GameState.manaPotion.freeRegenEnd or 0
+    if curEnd < now then curEnd = now end
+    GameState.manaPotion.freeRegenEnd = curEnd + 3600
+end
 
 -- ============================================================================
 -- 个人最佳记录更新

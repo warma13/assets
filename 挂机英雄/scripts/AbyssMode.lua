@@ -262,6 +262,13 @@ do
             end
             bs._waveComplete = true
             bs._restTimer    = 1.5
+
+            -- 深渊Boss掉落: 深渊之心 + 怨魂碎片
+            local heartDrop = 1 + math.floor(ab.floor / 10)   -- 每10层+1
+            local wraithDrop = 2 + math.floor(ab.floor / 5)   -- 每5层+2
+            GameState.AddMaterials({ abyssHeart = heartDrop, wraith = wraithDrop })
+            print("[AbyssMode] Boss drop: abyssHeart=" .. heartDrop .. " wraith=" .. wraithDrop)
+
             Particles.SpawnReactionText(bs.particles,
                 bs.playerBattle.x, bs.playerBattle.y - 40,
                 "深渊 " .. ab.floor .. " 层通过!", { 180, 120, 255 })
@@ -272,6 +279,12 @@ do
         if not AbyssConfig.IsBossFloor(ab.floor) and ab.killCount >= AbyssConfig.KILL_TARGET then
             bs._waveComplete = true
             bs._restTimer    = 1.0
+
+            -- 普通层掉落: 怨魂碎片
+            local wraithDrop = 1 + math.floor(ab.floor / 10)
+            GameState.AddMaterial("wraith", wraithDrop)
+            print("[AbyssMode] Floor clear drop: wraith=" .. wraithDrop)
+
             Particles.SpawnReactionText(bs.particles,
                 bs.playerBattle.x, bs.playerBattle.y - 40,
                 "深渊 " .. ab.floor .. " 层通过!", { 180, 120, 255 })

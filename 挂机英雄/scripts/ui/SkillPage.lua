@@ -145,10 +145,61 @@ function SkillPage.Create()
                 alignItems = "center",
                 justifyContent = "center",
                 gap = SLOT_GAP,
-                paddingHorizontal = 10,
+                paddingHorizontal = 6,
                 backgroundColor = { 20, 24, 36, 250 },
                 borderTopWidth = 1, borderTopColor = { 60, 70, 100, 100 },
                 children = {
+                    -- 魔力之源药水图标
+                    UI.Panel {
+                        id = "mana_potion_slot",
+                        width = SLOT_SIZE, height = SLOT_SIZE,
+                        backgroundColor = { 30, 50, 80, 200 },
+                        borderRadius = 6,
+                        borderWidth = 1.5, borderColor = { 60, 140, 255, 180 },
+                        alignItems = "center", justifyContent = "center",
+                        onClick = Utils.Debounce(function()
+                            SkillPage.ShowManaPotionPopup()
+                        end, 0.2),
+                        children = {
+                            UI.Panel {
+                                width = 22, height = 22,
+                                backgroundImage = "image/mana_potion.png",
+                                backgroundFit = "contain",
+                                pointerEvents = "none",
+                            },
+                            UI.Label {
+                                id = "mana_potion_count",
+                                text = "0",
+                                fontSize = 7, fontColor = { 150, 210, 255, 230 },
+                                position = "absolute", bottom = 0, right = 1,
+                                pointerEvents = "none",
+                            },
+                        },
+                    },
+                    -- 自动喝药按钮
+                    UI.Panel {
+                        id = "auto_potion_btn",
+                        width = SLOT_SIZE, height = SLOT_SIZE,
+                        backgroundColor = { 40, 40, 50, 200 },
+                        borderRadius = 6,
+                        borderWidth = 1, borderColor = { 100, 100, 120, 120 },
+                        alignItems = "center", justifyContent = "center",
+                        onClick = Utils.Debounce(function()
+                            GameState.manaPotion.autoUse = not GameState.manaPotion.autoUse
+                            SaveSystem.MarkDirty()
+                            SkillPage.RefreshManaPotionUI()
+                            if GameState.manaPotion.autoUse then
+                                Toast.Success("自动喝药 已开启")
+                            else
+                                Toast.Warn("自动喝药 已关闭")
+                            end
+                        end, 0.2),
+                        children = {
+                            UI.Label { id = "auto_potion_text", text = "自动", fontSize = 8, fontColor = { 120, 120, 140, 200 } },
+                        },
+                    },
+                    -- 分隔线
+                    UI.Panel { width = 1, height = 30, backgroundColor = { 80, 90, 120, 80 } },
                     -- 基础技能槽 (黄框)
                     UI.Panel {
                         id = "slot_basic",
@@ -417,6 +468,7 @@ function SkillPage.Refresh()
     SkillPage.RefreshHeader()
     SkillPage.RefreshInfo()
     SkillPage.RefreshLoadout()
+    SkillPage.RefreshManaPotionUI()
 end
 
 function SkillPage.RefreshHeader()
@@ -872,6 +924,215 @@ end
 
 function SkillPage.InvalidateCache()
     -- 接口兼容
+end
+
+-- ============================================================================
+-- 魔力之源 UI
+-- ============================================================================
+
+local manaPotionOverlay_ = nil
+
+function SkillPage.RefreshManaPotionUI()
+    if not page_ then return end
+    local countLabel = page_:FindById("mana_potion_count")
+    if countLabel then
+        countLabel:SetText(tostring(GameState.manaPotion.count or 0))
+    end
+    local isOn = GameState.manaPotion.autoUse
+    local autoBtn = page_:FindById("auto_potion_btn")
+    if autoBtn then
+        autoBtn:SetStyle({
+            backgroundColor = isOn and { 30, 80, 60, 220 } or { 40, 40, 50, 200 },
+            borderColor     = isOn and { 80, 220, 120, 200 } or { 100, 100, 120, 120 },
+        })
+    end
+    local autoText = page_:FindById("auto_potion_text")
+    if autoText then
+        autoText:SetStyle({ fontColor = isOn and { 80, 220, 120, 240 } or { 120, 120, 140, 200 } })
+    end
+end
+
+function SkillPage.CloseManaPotionPopup()
+    if manaPotionOverlay_ then
+        manaPotionOverlay_:Destroy()
+        manaPotionOverlay_ = nil
+    end
+end
+
+function SkillPage.ShowManaPotionPopup()
+    SkillPage.CloseManaPotionPopup()
+
+    local mp = GameState.manaPotion
+    local lv = mp.level or 0
+    local maxLv = 10
+    local pct = GameState.GetManaPotionPct()
+    local pctStr = math.floor(pct * 100 + 0.5) .. "%"
+    local nextPctStr = lv < maxLv and (math.floor((pct + 0.03) * 100 + 0.5) .. "%") or "MAX"
+    local canUpgrade = lv < maxLv
+    local adRemain = GameState.GetManaPotionAdRemain()
+    local freeRemain = GameState.GetFreeRegenRemain()
+    local isFreeActive = freeRemain > 0
+
+    -- 格式化剩余时间
+    local function FmtTime(sec)
+        local h = math.floor(sec / 3600)
+        local m = math.floor((sec % 3600) / 60)
+        if h > 0 then return h .. "时" .. m .. "分" end
+        return m .. "分"
+    end
+
+    local actionChildren = {}
+
+    -- 免费回复状态
+    if isFreeActive then
+        table.insert(actionChildren, UI.Label {
+            text = "无消耗回复中: 剩余 " .. FmtTime(freeRemain),
+            fontSize = 11, fontColor = { 80, 220, 160, 240 },
+        })
+    end
+
+    -- 看广告 +1小时
+    local adBtnText = adRemain > 0
+        and ("▶ 看广告 +1小时无消耗回复 (" .. adRemain .. "/24)")
+        or "今日次数已用完"
+    table.insert(actionChildren, UI.Button {
+        text = adBtnText,
+        height = 34, fontSize = 11, width = "100%",
+        backgroundColor = adRemain > 0 and { 40, 100, 180, 230 } or { 60, 60, 70, 200 },
+        onClick = Utils.Debounce(function()
+            if adRemain <= 0 then
+                Toast.Warn("今日广告次数已用完")
+                return
+            end
+            local ok, err = pcall(function()
+                ---@diagnostic disable-next-line: undefined-global
+                sdk:ShowRewardVideoAd(function(result)
+                    if result.success then
+                        GameState.RecordManaPotionAd()
+                        SaveSystem.MarkDirty()
+                        Toast.Success("获得 1小时无消耗回复！")
+                        SkillPage.CloseManaPotionPopup()
+                        SkillPage.ShowManaPotionPopup()
+                        SkillPage.RefreshManaPotionUI()
+                    else
+                        if result.msg == "embed manual close" then
+                            Toast.Warn("需完整观看广告才能获得奖励")
+                        else
+                            Toast.Warn("广告播放失败")
+                        end
+                    end
+                end)
+            end)
+            if not ok then
+                Toast.Warn("广告功能暂不可用")
+            end
+        end, 0.5),
+    })
+
+    -- 消耗森之露升级
+    if canUpgrade then
+        local upgradeCost = GameState.GetManaPotionUpgradeCost() or 0
+        local haveDew = GameState.materials.forestDew or 0
+        local canAfford = haveDew >= upgradeCost
+        table.insert(actionChildren, UI.Button {
+            text = canAfford
+                and ("升级 (消耗 " .. upgradeCost .. " 森之露)")
+                or ("森之露不足 (" .. haveDew .. "/" .. upgradeCost .. ")"),
+            height = 34, fontSize = 12, width = "100%",
+            backgroundColor = canAfford and { 60, 160, 100, 230 } or { 80, 80, 90, 180 },
+            onClick = Utils.Debounce(function()
+                local success, errMsg = GameState.UpgradeManaPotionWithDew()
+                if success then
+                    SaveSystem.MarkDirty()
+                    Toast.Success("魔力之源升级成功！")
+                    SkillPage.CloseManaPotionPopup()
+                    SkillPage.ShowManaPotionPopup()
+                    SkillPage.RefreshManaPotionUI()
+                else
+                    Toast.Warn(errMsg or "升级失败")
+                end
+            end, 0.5),
+        })
+    end
+
+    -- 关闭按钮
+    table.insert(actionChildren, UI.Button {
+        text = "关闭", height = 28, fontSize = 11, width = "100%",
+        backgroundColor = { 60, 65, 75, 200 },
+        onClick = function() SkillPage.CloseManaPotionPopup() end,
+    })
+
+    manaPotionOverlay_ = UI.Panel {
+        position = "absolute",
+        left = 0, right = 0, top = 0, bottom = 0,
+        zIndex = 300,
+        backgroundColor = { 0, 0, 0, 120 },
+        alignItems = "center", justifyContent = "center",
+        onClick = function() SkillPage.CloseManaPotionPopup() end,
+        children = {
+            UI.Panel {
+                width = "80%",
+                backgroundColor = { 18, 22, 34, 245 },
+                borderColor = { 60, 140, 255, 200 },
+                borderWidth = 1, borderRadius = 8,
+                padding = 14, gap = 10,
+                alignItems = "center",
+                onClick = function() end,  -- 阻止冒泡
+                children = {
+                    -- 标题行
+                    UI.Panel {
+                        flexDirection = "row", alignItems = "center", gap = 8,
+                        children = {
+                            UI.Panel {
+                                width = 28, height = 28,
+                                backgroundImage = "image/mana_potion.png",
+                                backgroundFit = "contain",
+                                pointerEvents = "none",
+                            },
+                            UI.Label { text = "魔力之源", fontSize = 16, fontColor = { 100, 180, 255, 255 } },
+                        },
+                    },
+                    -- 信息
+                    UI.Label {
+                        text = "每瓶恢复 " .. pctStr .. " 最大MP",
+                        fontSize = 12, fontColor = { 180, 210, 240, 230 },
+                    },
+                    UI.Panel {
+                        flexDirection = "row", gap = 12,
+                        children = {
+                            UI.Label {
+                                text = "持有: " .. (mp.count or 0) .. " 瓶",
+                                fontSize = 11, fontColor = { 150, 210, 255, 220 },
+                            },
+                            UI.Label {
+                                text = "等级: " .. lv .. "/" .. maxLv,
+                                fontSize = 11, fontColor = { 200, 160, 255, 220 },
+                            },
+                        },
+                    },
+                    -- 升级预览
+                    canUpgrade and UI.Label {
+                        text = "升级后: " .. pctStr .. " → " .. nextPctStr,
+                        fontSize = 10, fontColor = { 160, 255, 160, 200 },
+                    } or UI.Label {
+                        text = "已满级！每瓶恢复 60% MP",
+                        fontSize = 10, fontColor = { 255, 215, 0, 220 },
+                    },
+                    -- 分隔
+                    UI.Panel { width = "90%", height = 1, backgroundColor = { 80, 90, 120, 80 }, marginVertical = 2 },
+                    -- 操作按钮
+                    UI.Panel {
+                        width = "100%", gap = 6, alignItems = "center",
+                        children = actionChildren,
+                    },
+                },
+            },
+        },
+    }
+
+    if page_ then
+        page_:AddChild(manaPotionOverlay_)
+    end
 end
 
 return SkillPage

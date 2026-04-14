@@ -5,6 +5,7 @@
 local GameState  = require("GameState")
 local SaveSystem = require("SaveSystem")
 local EventBus   = require("EventBus")
+local FloatTip   = require("ui.FloatTip")
 
 local Loot = {}
 
@@ -170,8 +171,9 @@ function Loot.Collect(loot)
     elseif loot.type == "gold" then
         GameState.AddGold(loot.value)
     elseif loot.type == "equip" then
-        local ok = GameState.AddToInventory(loot.value)
+        local ok, decompInfo = GameState.AddToInventory(loot.value)
         if not ok then return false end
+        if decompInfo then FloatTip.Decompose(decompInfo) end
         SaveSystem.MarkDirty()
     elseif loot.type == "soulCrystal" then
         GameState.AddSoulCrystal(loot.value)

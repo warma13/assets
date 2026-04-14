@@ -27,7 +27,7 @@ local CLOUD_TIMEOUT        = 10     -- 云端请求超时(秒)
 local MAX_RETRY            = 3      -- 最大重试次数
 local MIN_OFFLINE_SEC      = 300    -- 离线奖励最短时间(秒)
 local MAX_OFFLINE_SEC      = 28800  -- 离线奖励最长时间(秒)
-local CURRENT_SAVE_VERSION = 12
+local CURRENT_SAVE_VERSION = 14
 local MAX_SLOTS            = 10
 local SAVE_FORMAT          = 2      -- 分片存档格式版本
 local CHUNK_MAX_BYTES      = 9 * 1024  -- 单 key 最大字节数 (9KB, 留1KB安全余量)
@@ -188,8 +188,12 @@ local function CompressItem(item)
     -- 强化相关 (仅存在时写入)
     if item.upgradeLv and item.upgradeLv > 0 then
         c.ul  = item.upgradeLv
-        c.us  = item.upgradeStonesSpent
+        c.us  = item.upgradeStonesSpent  -- 旧版兼容
+        c.ums = item.upgradeMatSpent     -- v13: 多材料消耗记录
+        c.ugs = item.upgradeGoldSpent    -- v14: 升级金币消耗记录
     end
+    -- 终局强化标记 (v14)
+    if item.endgameEnhanced then c.eg = true end
 
     -- 宝石孔位
     if item.sockets and item.sockets > 0 then
@@ -268,8 +272,12 @@ local function DecompressItem(c)
     -- 强化字段
     if c.ul and c.ul > 0 then
         item.upgradeLv         = c.ul
-        item.upgradeStonesSpent = c.us
+        item.upgradeStonesSpent = c.us  -- 旧版兼容
+        item.upgradeMatSpent   = c.ums  -- v13: 多材料消耗记录
+        item.upgradeGoldSpent  = c.ugs  -- v14: 升级金币消耗记录
     end
+    -- 终局强化标记 (v14)
+    if c.eg then item.endgameEnhanced = true end
 
     -- 宝石孔位解压
     if c.sk and c.sk > 0 then
@@ -396,8 +404,9 @@ local function SplitIntoGroups(saveData)
             inventory = CompressEquipmentTable(saveData.inventory, true),
         },
         skills = {
-            skills      = saveData.skills,
-            potionBuffs = saveData.potionBuffs,
+            skills       = saveData.skills,
+            skillLoadout = saveData.skillLoadout,
+            potionBuffs  = saveData.potionBuffs,
         },
         misc = {
             -- 硬编码保留的 misc 字段 (未迁移至域注册的)
@@ -1047,6 +1056,140 @@ local MIGRATIONS = {
         data.version = 12
         return data
     end,
+
+    -- v12 → v13: D4 多材料系统 — stone → iron, upgradeStonesSpent → upgradeMatSpent
+    [12] = function(data)
+        -- 1. 材料迁移: stone → iron (1:1)
+        data.materials = data.materials or {}
+        local oldStone = data.materials.stone or 0
+        if oldStone > 0 and not data.materials.iron then
+            data.materials.iron = oldStone
+        end
+        -- 初始化新材料字段
+        data.materials.iron       = data.materials.iron or 0
+        data.materials.crystal    = data.materials.crystal or 0
+        data.materials.wraith     = data.materials.wraith or 0
+        data.materials.eternal    = data.materials.eternal or 0
+        data.materials.abyssHeart = data.materials.abyssHeart or 0
+        data.materials.riftEcho   = data.materials.riftEcho or 0
+
+        -- 2. 装备迁移: upgradeStonesSpent → upgradeMatSpent.iron
+        local migratedCount = 0
+        local function migrateItem(item)
+            if not item or type(item) ~= "table" then return end
+            local spent = item.upgradeStonesSpent
+            if spent and spent > 0 and not item.upgradeMatSpent then
+                item.upgradeMatSpent = { iron = spent }
+                migratedCount = migratedCount + 1
+            end
+        end
+
+        if data.equipment and type(data.equipment) == "table" then
+            for _, item in pairs(data.equipment) do migrateItem(item) end
+        end
+        if data.inventory and type(data.inventory) == "table" then
+            for _, item in ipairs(data.inventory) do migrateItem(item) end
+        end
+
+        if oldStone > 0 or migratedCount > 0 then
+            print(string.format("[Migration v12→v13] Materials: stone=%d→iron, %d items migrated upgradeMatSpent",
+                oldStone, migratedCount))
+        end
+
+        data.version = 13
+        return data
+    end,
+
+    -- v13 → v14: D4 式 4 级固定升级 — 旧升级等级 clamp 到 4, 退还多余材料/金币
+    -- 旧公式: 50级渐进式 → 新: 每品质最多4级查表
+    -- 词缀: 旧里程碑随机 → 新: 全词缀统一 +5%/级
+    [13] = function(data)
+        local NEW_MAX = 4  -- 所有品质统一最多4级
+
+        local function migrateItem(item)
+            if not item or type(item) ~= "table" then return end
+            local oldLv = item.upgradeLv or 0
+            if oldLv <= 0 then return end
+
+            -- 1. clamp 升级等级
+            local newLv = math.min(oldLv, NEW_MAX)
+            item.upgradeLv = newLv
+
+            -- 2. 退还多余的材料投入 (超出部分全额退还)
+            if oldLv > NEW_MAX and item.upgradeMatSpent then
+                -- 计算新4级应消耗的材料总量
+                local qi = item.qualityIdx or 2
+                local newTotalMats = {}
+                local costTable = Config.UPGRADE_COSTS[qi]
+                if costTable then
+                    for lv = 1, NEW_MAX do
+                        local entry = costTable[lv]
+                        if entry and entry.mats then
+                            for matId, amt in pairs(entry.mats) do
+                                newTotalMats[matId] = (newTotalMats[matId] or 0) + amt
+                            end
+                        end
+                    end
+                end
+                -- 退还: spent - newTotal (差值归入材料池)
+                data.materials = data.materials or {}
+                for matId, spent in pairs(item.upgradeMatSpent) do
+                    local kept = newTotalMats[matId] or 0
+                    local refund = spent - kept
+                    if refund > 0 then
+                        data.materials[matId] = (data.materials[matId] or 0) + refund
+                    end
+                end
+                -- 更新 spent 记录为新的总量
+                item.upgradeMatSpent = newTotalMats
+            end
+
+            -- 3. 词缀: 清除旧 milestoneCount, 用新公式重算 value
+            -- 新公式: value = baseValue * (1 + newLv * 0.05)
+            if item.affixes then
+                local affixMul = 1.0 + newLv * (Config.UPGRADE_AFFIX_GROWTH or 0.05)
+                for _, aff in ipairs(item.affixes) do
+                    if aff.baseValue and aff.baseValue > 0 then
+                        aff.value = aff.baseValue * affixMul
+                    end
+                    aff.milestoneCount = nil  -- 移除旧里程碑字段
+                end
+            end
+
+            -- 4. 重算主属性 (用新乘法公式)
+            if item.mainStatId and item.mainStatBase then
+                item.mainStatValue = Config.CalcMainStatValueFull(
+                    item.mainStatBase, item.itemPower or 100, newLv)
+            end
+
+            -- 5. 初始化新字段
+            item.upgradeGoldSpent = nil  -- 旧存档无金币消耗记录
+            item.endgameEnhanced = nil
+        end
+
+        local count = 0
+        local function countAndMigrate(item)
+            if item and type(item) == "table" and (item.upgradeLv or 0) > 0 then
+                count = count + 1
+                migrateItem(item)
+            end
+        end
+
+        if data.equipment and type(data.equipment) == "table" then
+            for _, item in pairs(data.equipment) do countAndMigrate(item) end
+        end
+        if data.inventory and type(data.inventory) == "table" then
+            for _, item in ipairs(data.inventory) do countAndMigrate(item) end
+        end
+
+        if count > 0 then
+            print(string.format("[Migration v13→v14] Migrated %d upgraded items: clamp to %d levels, affix unified +5%%/lv",
+                count, NEW_MAX))
+        end
+
+        data.version = 14
+        return data
+    end,
 }
 
 local function MigrateData(data)
@@ -1124,10 +1267,29 @@ function SlotSaveSystem.Serialize()
         },
         equipment   = equipment,
         inventory   = GameState.inventory,
-        materials   = { stone = GameState.materials.stone, soulCrystal = GameState.materials.soulCrystal or 0 },
+        materials   = {
+            iron = GameState.materials.iron or 0,
+            crystal = GameState.materials.crystal or 0,
+            wraith = GameState.materials.wraith or 0,
+            eternal = GameState.materials.eternal or 0,
+            abyssHeart = GameState.materials.abyssHeart or 0,
+            riftEcho = GameState.materials.riftEcho or 0,
+            soulCrystal = GameState.materials.soulCrystal or 0,
+            forestDew = GameState.materials.forestDew or 0,
+            stone = GameState.materials.iron or 0,  -- 旧版兼容: stone = iron
+        },
         expandCount = GameState.expandCount or 0,
         gemBagExpandCount = GameState.gemBagExpandCount or 0,
         skills      = skills,
+        skillLoadout = (function()
+            if not GameState.skillLoadout then return nil end
+            local lo = GameState.skillLoadout
+            local active = {}
+            for i = 1, 4 do
+                active[i] = lo.active[i] or false  -- false 占位保持索引
+            end
+            return { basic = lo.basic or false, active = active }
+        end)(),
         stage       = { chapter = GameState.stage.chapter, stage = GameState.stage.stage },
         potionBuffs = potionBuffs,
         records     = {
@@ -1225,10 +1387,22 @@ function SlotSaveSystem.Deserialize(data)
         GameState.inventory = data.inventory
     end
 
-    -- 材料
+    -- 材料 (v13 多材料兼容)
     if data.materials then
-        GameState.materials.stone = data.materials.stone or 0
+        -- 新材料字段
+        GameState.materials.iron       = data.materials.iron or 0
+        GameState.materials.crystal    = data.materials.crystal or 0
+        GameState.materials.wraith     = data.materials.wraith or 0
+        GameState.materials.eternal    = data.materials.eternal or 0
+        GameState.materials.abyssHeart = data.materials.abyssHeart or 0
+        GameState.materials.riftEcho   = data.materials.riftEcho or 0
         GameState.materials.soulCrystal = data.materials.soulCrystal or 0
+        GameState.materials.forestDew  = data.materials.forestDew or 0
+
+        -- 旧存档迁移: 如果有 stone 但无 iron，将 stone 全部转为 iron
+        if (data.materials.stone or 0) > 0 and (data.materials.iron or 0) == 0 then
+            GameState.materials.iron = data.materials.stone
+        end
     end
 
     GameState.expandCount = data.expandCount or 0
@@ -1246,6 +1420,23 @@ function SlotSaveSystem.Deserialize(data)
     if data.skills and type(data.skills) == "table" then
         for id, level in pairs(data.skills) do
             if GameState.skills[id] then GameState.skills[id].level = level end
+        end
+    end
+
+    -- 技能装备槽位
+    if data.skillLoadout and type(data.skillLoadout) == "table" then
+        GameState.InitSkillLoadout()
+        local lo = data.skillLoadout
+        if lo.basic and lo.basic ~= false then
+            GameState.skillLoadout.basic = lo.basic
+        end
+        if lo.active and type(lo.active) == "table" then
+            for i = 1, 4 do
+                local sid = lo.active[i]
+                if sid and sid ~= false then
+                    GameState.skillLoadout.active[i] = sid
+                end
+            end
         end
     end
 
@@ -2255,6 +2446,38 @@ SlotSaveSystem.RegisterDomain({
             GS.forge.usedFree = data.forge.usedFree or 0
             GS.forge.usedPaid = data.forge.usedPaid or 0
             GS.forge.lastDate = data.forge.lastDate or ""
+        end
+    end,
+})
+
+-- ============================================================================
+-- 内联域注册: manaPotion (魔力之源)
+-- ============================================================================
+
+SlotSaveSystem.RegisterDomain({
+    name  = "manaPotion",
+    keys  = { "manaPotion" },
+    group = "misc",
+    serialize = function(GS)
+        return {
+            manaPotion = {
+                count        = GS.manaPotion.count,
+                level        = GS.manaPotion.level,
+                autoUse      = GS.manaPotion.autoUse,
+                freeRegenEnd = GS.manaPotion.freeRegenEnd,
+                adWatchCount = GS.manaPotion.adWatchCount,
+                adWatchDate  = GS.manaPotion.adWatchDate,
+            },
+        }
+    end,
+    deserialize = function(GS, data)
+        if data.manaPotion and type(data.manaPotion) == "table" then
+            GS.manaPotion.count        = data.manaPotion.count or 0
+            GS.manaPotion.level        = data.manaPotion.level or 0
+            GS.manaPotion.autoUse      = data.manaPotion.autoUse or false
+            GS.manaPotion.freeRegenEnd = data.manaPotion.freeRegenEnd or 0
+            GS.manaPotion.adWatchCount = data.manaPotion.adWatchCount or 0
+            GS.manaPotion.adWatchDate  = data.manaPotion.adWatchDate or ""
         end
     end,
 })

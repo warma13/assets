@@ -13,6 +13,7 @@ local GameState      = require("GameState")
 local StageConfig    = require("StageConfig")
 local SaveSystem     = require("SaveSystem")
 local DamageTracker  = require("DamageTracker")
+local FloatTip       = require("ui.FloatTip")
 
 ---@diagnostic disable-next-line: undefined-global
 local lobby = lobby  -- 引擎内置全局
@@ -70,10 +71,10 @@ local BOSS_ROSTER = {
 
 -- 排名奖励配置
 local RANK_REWARDS = {
-    { maxRank = 1,   prisms = 2, chippedGems = 5, label = "第1名" },
-    { maxRank = 2,   prisms = 1, chippedGems = 4, label = "第2名" },
-    { maxRank = 3,   prisms = 1, chippedGems = 3, label = "第3名" },
-    { maxRank = 50,  prisms = 0, chippedGems = 1, label = "第4-50名" },
+    { maxRank = 1,   prisms = 2, chippedGems = 5, materials = { riftEcho = 3, eternal = 2 }, label = "第1名" },
+    { maxRank = 2,   prisms = 1, chippedGems = 4, materials = { riftEcho = 2, eternal = 1 }, label = "第2名" },
+    { maxRank = 3,   prisms = 1, chippedGems = 3, materials = { riftEcho = 1, eternal = 1 }, label = "第3名" },
+    { maxRank = 50,  prisms = 0, chippedGems = 1, materials = { riftEcho = 1 },              label = "第4-50名" },
 }
 
 -- ============================================================================
@@ -160,6 +161,14 @@ local function showRewardToast(rank, reward)
         local parts = {}
         if reward.prisms > 0 then table.insert(parts, reward.prisms .. "散光棱镜") end
         if reward.chippedGems > 0 then table.insert(parts, reward.chippedGems .. "碎裂宝石") end
+        if reward.materials then
+            local MatMap = Config.MATERIAL_MAP
+            for matId, amt in pairs(reward.materials) do
+                local def = MatMap and MatMap[matId]
+                local name = def and def.name or matId
+                table.insert(parts, amt .. name)
+            end
+        end
         local desc = table.concat(parts, " + ")
         Toast.Show("赛季排名#" .. rank .. " 奖励已领取: " .. desc,
             { 255, 220, 100, 255 }, { 60, 40, 15, 230 })
@@ -333,7 +342,8 @@ function WorldBoss.GrantParticipationReward()
 
         -- 装备 (Boss掉落品质)
         local equip = GameState.GenerateEquip(chapter * 10, true)
-        GameState.AddToInventory(equip)
+        local _, decompInfo = GameState.AddToInventory(equip)
+        if decompInfo then FloatTip.Decompose(decompInfo) end
         table.insert(lootItems, {
             type      = "equip",
             name      = equip.name,
@@ -348,11 +358,16 @@ function WorldBoss.GrantParticipationReward()
         totalCrystal = totalCrystal + crystalAmount
     end
 
+    -- 参与奖材料: 裂隙残响
+    local riftDrop = 1
+    GameState.AddMaterial("riftEcho", riftDrop)
+
     -- 存储本次掉落详情 (供结算界面读取)
     WorldBoss.lastLoot = {
-        gold    = totalGold,
-        crystal = totalCrystal,
-        equips  = lootItems,
+        gold      = totalGold,
+        crystal   = totalCrystal,
+        equips    = lootItems,
+        materials = { riftEcho = riftDrop },
     }
 end
 
@@ -581,11 +596,17 @@ function WorldBoss.ClaimSeasonReward(rank)
         GameState.AddGem(gem.id, 1, 1)
     end
 
+    -- 发放排名材料奖励
+    if reward.materials then
+        GameState.AddMaterials(reward.materials)
+    end
+
     GameState.worldBoss.lastReward = prevSeason
     SaveSystem.SaveNow()
 
     print("[WorldBoss] Season reward claimed: rank=" .. tostring(rank)
-        .. " prisms=" .. reward.prisms .. " chippedGems=" .. reward.chippedGems)
+        .. " prisms=" .. reward.prisms .. " chippedGems=" .. reward.chippedGems
+        .. " materials=" .. (reward.materials and "yes" or "none"))
     return true, reward
 end
 

@@ -192,15 +192,29 @@ function SetDungeon.EndFight(won)
     if won then
         -- 通关: 生成套装装备奖励
         local reward = SetDungeon.GenerateReward()
+
+        -- 材料掉落: 普通→永夜之魂, 困难→额外裂隙残响
+        local matDrop = {}
+        if SetDungeon.isHardMode then
+            matDrop.eternal  = 2
+            matDrop.riftEcho = 1
+        else
+            matDrop.eternal = 1
+        end
+        GameState.AddMaterials(matDrop)
+
         SetDungeon.fightResult = {
             won       = true,
             killCount = SetDungeon.killCount,
             targetSet = SetDungeon.targetSetId,
             hardMode  = SetDungeon.isHardMode,
             reward    = reward,
+            materials = matDrop,
         }
+        local matDesc = ""
+        for k, v in pairs(matDrop) do matDesc = matDesc .. k .. "=" .. v .. " " end
         print("[SetDungeon] Victory! Reward: " .. reward.name
-            .. " (" .. reward.qualityName .. ")")
+            .. " (" .. reward.qualityName .. ") Materials: " .. matDesc)
     else
         -- 失败: 退还次数
         GameState.setDungeon.attemptsToday = math.max(0,
@@ -264,7 +278,11 @@ function SetDungeon.GenerateReward()
     local item = GameState.CreateEquip(qualityIdx, maxCh, slotId, SetDungeon.targetSetId)
 
     -- 加入背包
-    GameState.AddToInventory(item)
+    local _, decompInfo = GameState.AddToInventory(item)
+    if decompInfo then
+        local FloatTip = require("ui.FloatTip")
+        FloatTip.Decompose(decompInfo)
+    end
 
     return item
 end

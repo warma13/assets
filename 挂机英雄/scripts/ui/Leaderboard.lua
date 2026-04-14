@@ -15,7 +15,7 @@ local SlotSaveSystem = require("SlotSaveSystem")
 local Leaderboard = {}
 
 -- 排行榜云存储 key（按槽位分离，后缀 _s{N}）
-local KEY_POWER_BASE = "max_power_v2"
+local KEY_POWER_BASE = "max_power_v3"
 local KEY_STAGE_BASE = "max_stage_v2"
 local KEY_TRIAL_BASE = "max_trial_floor_v3"
 
@@ -289,7 +289,7 @@ local function FormatScore(rankKey, score)
     elseif rankKey == KEY_TRIAL then
         return "F" .. tostring(score)
     elseif rankKey == KEY_POWER then
-        return FormatBigNumber(score * 1000)
+        return FormatBigNumber(score)
     end
     return tostring(score)
 end
@@ -481,7 +481,7 @@ function Leaderboard.LoadPage()
                     UI.Label { text = "我", flexGrow = 1, flexBasis = 0, fontSize = 11, fontColor = { 120, 180, 255, 255 } },
                     UI.Label {
                         text = FormatScore(currentRankKey_,
-                            currentRankKey_ == KEY_POWER and math.floor(records.maxPower / 1000)
+                            currentRankKey_ == KEY_POWER and records.maxPower
                             or currentRankKey_ == KEY_TRIAL and (GameState.endlessTrial.maxFloor or 0)
                             or (records.maxChapter * 100 + records.maxStage)),
                         width = 72, fontSize = 11, fontColor = Colors.text, textAlign = "right",
@@ -563,7 +563,7 @@ function Leaderboard.UpdateMyRankPanel()
         local records = GameState.records
         local myScore
         if currentRankKey_ == KEY_POWER then
-            myScore = math.floor(records.maxPower / 1000)
+            myScore = records.maxPower
         elseif currentRankKey_ == KEY_TRIAL then
             myScore = GameState.endlessTrial.maxFloor or 0
         else
@@ -648,7 +648,7 @@ function Leaderboard.UploadMyScore()
 
     pcall(function()
         clientCloud:BatchSet()
-            :SetInt(KEY_POWER, math.floor(records.maxPower / 1000))
+            :SetInt(KEY_POWER, records.maxPower)
             :SetInt(KEY_STAGE, stageVal)
             :SetInt(KEY_TRIAL, trialFloor)
             :Save("排行榜更新")

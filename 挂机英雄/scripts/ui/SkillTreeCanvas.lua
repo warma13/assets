@@ -578,19 +578,12 @@ function SkillTreeCanvas:DrawEnhanceNodes(nvg, layout)
         local cx, cy = en.x, en.y
         local hs = ES * 0.5
 
-        -- 互斥 & 前置依赖检查
+        -- 前置依赖检查
         local info = SkillTreeConfig.ENHANCE_MAP[enhId]
-        local isMutuallyBlocked = false
         local isRequiresLocked = false
         if info then
             local line = parentSkill.enhances[info.lineIdx]
             if line then
-                for _, other in ipairs(line) do
-                    if other.id ~= enhId and GameState.GetSkillLevel(other.id) > 0 then
-                        isMutuallyBlocked = true
-                        break
-                    end
-                end
                 -- 跨线前置依赖: requires 指定的增强节点未学则锁定
                 if line.requires and GameState.GetSkillLevel(line.requires) <= 0 then
                     isRequiresLocked = true
@@ -601,7 +594,7 @@ function SkillTreeCanvas:DrawEnhanceNodes(nvg, layout)
                 end
             end
         end
-        local isLocked = isMutuallyBlocked or isRequiresLocked
+        local isLocked = isRequiresLocked
 
         -- 选中高亮
         if isSelected then
@@ -685,7 +678,7 @@ function SkillTreeCanvas:DrawEnhanceNodes(nvg, layout)
         elseif isRequiresLocked then
             nvgFillColor(nvg, nvgRGBA(120, 80, 80, 120))
             nvgText(nvg, cx, cy, "🔒")
-        elseif not enhIconDrawn and not isMutuallyBlocked then
+        elseif not enhIconDrawn then
             nvgFillColor(nvg, nvgRGBA(200, 210, 230, 100))
             nvgText(nvg, cx, cy, "+")
         end

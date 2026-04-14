@@ -1,6 +1,6 @@
 -- ============================================================================
 -- state/equip/Upgrade.lua — 装备改造: 升级, IP注入, 附魔
--- v4.1: 升级仅提升主属性, 每5级随机一条词缀+2%, IP不变
+-- v5.0: D4风格 4次固定消耗, 全词缀统一+5%, 可选终局强化
 -- ============================================================================
 
 local M = {}
@@ -12,8 +12,13 @@ function M.Install(GS, ctx)
     local calcItemPower = ctx.calcItemPower
 
     -- ====================================================================
-    -- 升级 (v4.1: 仅提升主属性, 每5级随机一条词缀+2%)
+    -- 升级 (v5.0: 4次固定消耗, 全词缀+5%, 橙色可终局强化)
     -- ====================================================================
+
+    --- 是否为终局强化 (橙色满4级后的第5次)
+    local function isEndgameUpgrade(item)
+        return item.qualityIdx == 5 and (item.upgradeLv or 0) == 4 and not item.endgameEnhanced
+    end
 
     function GS.CanUpgradeEquip(item)
         if not item then return false, "无装备" end
@@ -22,45 +27,117 @@ function M.Install(GS, ctx)
         local maxLv = q.maxUpgrade or 0
         if maxLv <= 0 then return false, "白色装备无法升级" end
         local curLv = item.upgradeLv or 0
-        if curLv >= maxLv then return false, "已满级" end
-        local cost = Config.UpgradeCost(curLv, 1)
-        if GS.materials.stone < cost then
-            return false, "强化石不足 (" .. GS.materials.stone .. "/" .. cost .. ")"
+
+        -- 终局强化判断
+        local endgame = isEndgameUpgrade(item)
+        if curLv >= maxLv and not endgame then return false, "已满级" end
+
+        local costEntry = Config.UpgradeCost(item.qualityIdx, curLv)
+        if not costEntry then return false, "已满级" end
+
+        -- 检查金币
+        if costEntry.gold and costEntry.gold > 0 then
+            if (GS.player.gold or 0) < costEntry.gold then
+                return false, "金币不足 (需要" .. costEntry.gold .. ")"
+            end
         end
-        return true, nil
+
+        -- 检查材料
+        if costEntry.mats then
+            local ok, reason = GS.HasMaterials(costEntry.mats)
+            if not ok then return false, reason end
+        end
+
+        return true, nil, endgame
     end
 
     function GS.UpgradeEquip(slotId)
         local item = GS.equipment[slotId]
-        local ok, reason = GS.CanUpgradeEquip(item)
+        local ok, reason, endgame = GS.CanUpgradeEquip(item)
         if not ok then return false, reason end
 
         local curLv = item.upgradeLv or 0
-        local cost = Config.UpgradeCost(curLv, 1)
+        local costEntry = Config.UpgradeCost(item.qualityIdx, curLv)
 
-        GS.materials.stone = GS.materials.stone - cost
-        item.upgradeStonesSpent = (item.upgradeStonesSpent or 0) + cost
+        -- 扣除金币
+        if costEntry.gold and costEntry.gold > 0 then
+            GS.AddGold(-costEntry.gold)
+        end
+
+        -- 扣除材料
+        if costEntry.mats then
+            GS.SpendMaterials(costEntry.mats)
+        end
+
+        -- 记录已投入材料和金币 (用于分解退还)
+        if not item.upgradeMatSpent then item.upgradeMatSpent = {} end
+        if costEntry.mats then
+            for matId, amount in pairs(costEntry.mats) do
+                item.upgradeMatSpent[matId] = (item.upgradeMatSpent[matId] or 0) + amount
+            end
+        end
+        item.upgradeGoldSpent = (item.upgradeGoldSpent or 0) + (costEntry.gold or 0)
+
+        -- 终局强化标记
+        if endgame then
+            item.endgameEnhanced = true
+            -- 终局强化使用独立增长率
+            local egCfg = Config.UPGRADE_ENDGAME
+            -- 主属性: 额外 +10% (基于 IP 基础值)
+            if item.mainStatBase then
+                item.mainStatValue = Config.CalcMainStatValueFull(
+                    item.mainStatBase, item.itemPower or 100, curLv + 1)
+            end
+            -- 词缀: 额外 +5% (等效于第5次升级)
+            if item.affixes then
+                local newMul = Config.CalcAffixUpgradeMul(curLv + 1)
+                for _, aff in ipairs(item.affixes) do
+                    if not aff.baseValue then aff.baseValue = aff.value end
+                    aff.value = aff.baseValue * newMul
+                end
+            end
+            item.upgradeLv = curLv + 1
+
+            -- 日志
+            local costDesc = {}
+            if costEntry.mats then
+                for matId, amount in pairs(costEntry.mats) do
+                    local matDef = Config.MATERIAL_MAP[matId]
+                    table.insert(costDesc, (matDef and matDef.name or matId) .. "×" .. amount)
+                end
+            end
+            if costEntry.gold then table.insert(costDesc, "金币×" .. costEntry.gold) end
+            print("[Upgrade] 终局强化 " .. (item.name or "?") .. " (消耗 " .. table.concat(costDesc, ", ") .. ")")
+            return true, "终局强化完成!"
+        end
 
         curLv = curLv + 1
         item.upgradeLv = curLv
-        -- v4.0: IP 不再改变
 
-        -- 主属性用 CalcMainStatValueFull (含升级加成)
+        -- 主属性: CalcMainStatValueFull (含升级加成)
         if item.mainStatBase then
             item.mainStatValue = Config.CalcMainStatValueFull(item.mainStatBase, item.itemPower or 100, curLv)
         end
 
-        -- 词缀里程碑: 每5级随机选一条词缀 +2%
-        if curLv % Config.UPGRADE_AFFIX_MILESTONE_INTERVAL == 0 and item.affixes and #item.affixes > 0 then
-            local idx = math.random(1, #item.affixes)
-            local aff = item.affixes[idx]
-            if not aff.baseValue then aff.baseValue = aff.value end
-            aff.milestoneCount = (aff.milestoneCount or 0) + 1
-            aff.value = aff.baseValue * Config.CalcAffixMilestoneMul(aff.milestoneCount)
-            print("[Upgrade] 里程碑 Lv." .. curLv .. " → 词缀 #" .. idx .. " (" .. (aff.id or "?") .. ") +2%, 累计 " .. aff.milestoneCount .. " 次")
+        -- 词缀: 全部词缀统一 +5% (基于 baseValue × upgradeMul)
+        if item.affixes then
+            local newMul = Config.CalcAffixUpgradeMul(curLv)
+            for _, aff in ipairs(item.affixes) do
+                if not aff.baseValue then aff.baseValue = aff.value end
+                aff.value = aff.baseValue * newMul
+            end
         end
 
-        print("[Upgrade] " .. (item.name or "?") .. " → Lv." .. curLv .. " (消耗 " .. cost .. " 强化石)")
+        -- 日志
+        local costDesc = {}
+        if costEntry.mats then
+            for matId, amount in pairs(costEntry.mats) do
+                local matDef = Config.MATERIAL_MAP[matId]
+                table.insert(costDesc, (matDef and matDef.name or matId) .. "×" .. amount)
+            end
+        end
+        if costEntry.gold then table.insert(costDesc, "金币×" .. costEntry.gold) end
+        print("[Upgrade] " .. (item.name or "?") .. " → Lv." .. curLv .. " (消耗 " .. table.concat(costDesc, ", ") .. ")")
         local ok2, DR = pcall(require, "DailyRewards")
         if ok2 and DR and DR.TrackProgress then DR.TrackProgress("enhance", 1) end
         return true, "升级到 Lv." .. curLv

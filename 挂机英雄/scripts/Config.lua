@@ -184,32 +184,140 @@ Config.WAVE = {
 -- qualityMul 用于主词条缩放; 副词条数量 = subCount
 Config.EQUIP_QUALITY = {
     { name = "白色", color = { 200, 200, 200 }, qualityMul = 1.0, subCount = 0, dropWeight = 50, maxUpgrade = 0 },
-    { name = "绿色", color = { 100, 220, 100 }, qualityMul = 1.5, subCount = 1, dropWeight = 30, maxUpgrade = 10 },
-    { name = "蓝色", color = { 80, 140, 255 },  qualityMul = 2.0, subCount = 2, dropWeight = 15, canHaveSet = true, maxUpgrade = 20 },
-    { name = "紫色", color = { 180, 80, 220 },  qualityMul = 3.0, subCount = 3, dropWeight = 4,  canHaveSet = true, maxUpgrade = 35 },
-    { name = "橙色", color = { 255, 165, 0 },   qualityMul = 5.0, subCount = 4, dropWeight = 1,  canHaveSet = true, maxUpgrade = 50 },
+    { name = "绿色", color = { 100, 220, 100 }, qualityMul = 1.5, subCount = 1, dropWeight = 30, maxUpgrade = 4 },
+    { name = "蓝色", color = { 80, 140, 255 },  qualityMul = 2.0, subCount = 2, dropWeight = 15, canHaveSet = true, maxUpgrade = 4 },
+    { name = "紫色", color = { 180, 80, 220 },  qualityMul = 3.0, subCount = 3, dropWeight = 4,  canHaveSet = true, maxUpgrade = 4 },
+    { name = "橙色", color = { 255, 165, 0 },   qualityMul = 5.0, subCount = 4, dropWeight = 1,  canHaveSet = true, maxUpgrade = 4 },
 }
 
 -- ============================================================================
--- 装备升级系统 (v4.1: 主属性逐级提升, 每5级随机一条词缀+2%)
+-- 装备升级系统 (v5.0: D4风格 4次固定消耗制)
 -- ============================================================================
 
--- 升级每级主属性增长率: 加成 = slotBase × upgradeLv × MAIN_GROWTH
--- 橙色满级(50): slotBase × 50 × 0.04 = 2.0 × slotBase 额外加成
-Config.UPGRADE_MAIN_GROWTH = 0.04
+-- 升级每次主属性增长率: 每次 +10%, 4次满级 = +40%
+Config.UPGRADE_MAIN_GROWTH = 0.10
 
--- 词缀里程碑: 每 MILESTONE_INTERVAL 级, 随机选一条词缀 +MILESTONE_BONUS
--- 橙色50级共10次里程碑, 单条词缀最多被选中10次(+20%)
+-- 词缀增长: 每次升级所有词缀统一 +5%, 4次满级 = +20%
+Config.UPGRADE_AFFIX_GROWTH = 0.05
+
+-- (旧版兼容, 存档迁移用)
 Config.UPGRADE_AFFIX_MILESTONE_INTERVAL = 5
 Config.UPGRADE_AFFIX_MILESTONE_BONUS   = 0.02
 
+-- 升级固定消耗表 (按品质索引 2-5, 每品质 4 次)
+-- 每次消耗: { gold = N, mats = { [matId] = amount, ... } }
+Config.UPGRADE_COSTS = {
+    -- [2] 绿色
+    [2] = {
+        { gold = 50,   mats = { iron = 5 } },
+        { gold = 150,  mats = { iron = 10 } },
+        { gold = 400,  mats = { iron = 20 } },
+        { gold = 800,  mats = { iron = 35 } },
+    },
+    -- [3] 蓝色
+    [3] = {
+        { gold = 200,  mats = { iron = 8,  crystal = 2 } },
+        { gold = 500,  mats = { iron = 15, crystal = 4 } },
+        { gold = 1200, mats = { iron = 25, crystal = 8 } },
+        { gold = 2500, mats = { iron = 40, crystal = 15 } },
+    },
+    -- [4] 紫色
+    [4] = {
+        { gold = 500,  mats = { iron = 10, crystal = 5,  wraith = 2 } },
+        { gold = 1500, mats = { iron = 20, crystal = 10, wraith = 4 } },
+        { gold = 4000, mats = { iron = 35, crystal = 18, wraith = 8 } },
+        { gold = 8000, mats = { iron = 55, crystal = 30, wraith = 15 } },
+    },
+    -- [5] 橙色
+    [5] = {
+        { gold = 1000,  mats = { iron = 12, crystal = 8,  wraith = 4,  eternal = 1 } },
+        { gold = 3000,  mats = { iron = 25, crystal = 15, wraith = 8,  eternal = 2 } },
+        { gold = 8000,  mats = { iron = 40, crystal = 25, wraith = 15, eternal = 4 } },
+        { gold = 15000, mats = { iron = 65, crystal = 40, wraith = 25, eternal = 8 } },
+    },
+}
+
+-- 终局强化 (橙色满4级后可选第5次, 消耗深渊之心)
+Config.UPGRADE_ENDGAME = {
+    gold = 25000,
+    mats = { abyssHeart = 3 },
+    mainGrowth = 0.10,    -- 额外 +10% 主属性
+    affixGrowth = 0.05,   -- 额外 +5% 全词缀
+}
+
 -- UpgradeCost → ConfigCalc.lua
 
--- 分解装备获得的强化石数量 (品质越高越多)
+-- ============================================================================
+-- D4 风格材料系统
+-- ============================================================================
+
+-- 6 种材料定义
+Config.MATERIAL_DEFS = {
+    { id = "iron",       name = "锈蚀铁块", color = { 180, 160, 140 }, rarity = "common",    desc = "分解白/绿装获得，低级升级材料" },
+    { id = "crystal",    name = "暗纹晶体", color = { 100, 140, 220 }, rarity = "uncommon",  desc = "分解蓝装获得，中级升级材料" },
+    { id = "wraith",     name = "怨魂碎片", color = { 180, 80, 220 },  rarity = "rare",      desc = "分解紫装获得，高级升级材料" },
+    { id = "eternal",    name = "永夜之魂", color = { 255, 165, 0 },   rarity = "legendary", desc = "分解橙装获得，顶级升级材料" },
+    { id = "abyssHeart", name = "深渊之心", color = { 200, 50, 80 },   rarity = "mythic",    desc = "深渊模式Boss掉落" },
+    { id = "riftEcho",   name = "裂隙残响", color = { 80, 220, 200 },  rarity = "mythic",    desc = "套装秘境/世界Boss掉落" },
+    { id = "forestDew",  name = "森之露",   color = { 60, 200, 120 },  rarity = "rare",      desc = "魔力之森中凝结的纯净魔力，可用于强化魔力之源" },
+}
+
+-- 材料快查表 { [id] = materialDef }
+Config.MATERIAL_MAP = {}
+for _, mat in ipairs(Config.MATERIAL_DEFS) do
+    Config.MATERIAL_MAP[mat.id] = mat
+end
+
+-- 所有材料 ID 列表 (用于遍历)
+Config.MATERIAL_IDS = { "iron", "crystal", "wraith", "eternal", "abyssHeart", "riftEcho", "forestDew" }
+
+-- 材料图标路径 (生成后填入)
+Config.MATERIAL_ICON_PATHS = {
+    iron       = "image/mat_iron_20260412164347.png",
+    crystal    = "image/mat_crystal_20260412165207.png",
+    wraith     = "image/mat_wraith_20260412165203.png",
+    eternal    = "image/mat_eternal_20260412174302.png",
+    abyssHeart = "image/mat_abyssHeart_20260412165755.png",
+    riftEcho   = "image/mat_riftEcho_20260412172604.png",
+    forestDew  = "image/mat_forestDew_20260414151650.png",
+}
+
+-- 分解装备获得的材料 (按品质索引 1-5)
+-- qualityIdx: 1=白, 2=绿, 3=蓝, 4=紫, 5=橙
+Config.DECOMPOSE_MATERIALS = {
+    [1] = { iron = 2 },                       -- 白色: 2铁块
+    [2] = { iron = 5 },                       -- 绿色: 5铁块
+    [3] = { iron = 5, crystal = 3 },          -- 蓝色: 5铁块 + 3晶体
+    [4] = { crystal = 3, wraith = 4 },        -- 紫色: 3晶体 + 4碎片
+    [5] = { wraith = 3, eternal = 3 },        -- 橙色: 3碎片 + 3永夜
+}
+
+-- 分解金币产出 (按品质索引 1-5)
+Config.DECOMPOSE_GOLD = {
+    [1] = 5,     -- 白色
+    [2] = 15,    -- 绿色
+    [3] = 50,    -- 蓝色
+    [4] = 150,   -- 紫色
+    [5] = 500,   -- 橙色
+}
+
+-- 旧版兼容: DECOMPOSE_STONES (某些旧代码可能引用)
 Config.DECOMPOSE_STONES = { 0, 1, 2, 4, 8 }
 
--- 分解已升级装备时, 返还已投入材料的比例
-Config.UPGRADE_REFUND_RATIO = 0.8
+-- 升级材料分段: 不同升级等级消耗不同材料
+-- 每段指定: 起始等级(含), 结束等级(不含), 材料ID
+Config.UPGRADE_MATERIAL_TIERS = {
+    { minLv = 0,  maxLv = 10, matId = "iron" },       -- Lv0-9:  锈蚀铁块
+    { minLv = 10, maxLv = 20, matId = "crystal" },    -- Lv10-19: 暗纹晶体
+    { minLv = 20, maxLv = 35, matId = "wraith" },     -- Lv20-34: 怨魂碎片
+    { minLv = 35, maxLv = 999, matId = "eternal" },   -- Lv35+:   永夜之魂
+}
+
+-- 深渊之心额外消耗: 升级等级 >= 此值时每次额外消耗 1 深渊之心
+Config.UPGRADE_ABYSS_HEART_LEVEL = 45
+
+-- 分解已升级装备时, 返还已投入材料的比例 (v5.0: 80%→50%)
+Config.UPGRADE_REFUND_RATIO = 0.5
 
 -- 12 项装备属性定义
 -- base = 副词条基础值; mainMul = 主词条倍率(相对base); isPercent = 显示为百分比
@@ -936,9 +1044,16 @@ Config.DROP_BATCHES = {
 
 -- GetDropBatch, IsSetInBatch → ConfigCalc.lua
 
--- 锻造消耗
-Config.FORGE_STONE_COST       = 160   -- 强化石 (20个橙装分解 = 20×8)
-Config.FORGE_STONE_COST_LOCK  = 320   -- 锁定部位时双倍
+-- 锻造材料消耗 (替代旧版单一强化石)
+Config.FORGE_MATERIAL_COST = {
+    iron = 30, crystal = 15, wraith = 5,
+}
+Config.FORGE_MATERIAL_COST_LOCK = {
+    iron = 60, crystal = 30, wraith = 10,
+}
+-- 旧版兼容字段 (部分UI可能引用)
+Config.FORGE_STONE_COST       = 160
+Config.FORGE_STONE_COST_LOCK  = 320
 Config.FORGE_GOLD_BASE        = 30    -- 金币 = FORGE_GOLD_BASE × sqrt(bossScaleMul)
 Config.FORGE_GOLD_BASE_LOCK   = 60    -- 锁定部位时双倍
 
@@ -1096,7 +1211,7 @@ Config.ITEMS = {
         name = "属性洗点券",
         desc = "使用后重置所有属性点分配，免费回收全部已分配点数",
         icon = "Textures/Items/item_attr_reset.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 255, 200, 80 },  -- 金色
     },
     {
@@ -1104,7 +1219,7 @@ Config.ITEMS = {
         name = "技能重置券",
         desc = "使用后重置所有技能点分配，免费回收全部已分配点数",
         icon = "Textures/Items/item_skill_reset.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 180, 100, 255 },  -- 紫色
     },
     {
@@ -1112,7 +1227,7 @@ Config.ITEMS = {
         name = "速升药水·初",
         desc = "使用后立即获得 1000万 经验值",
         icon = "item_exp_potion_10m_20260309142542.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 100, 220, 100 },  -- 绿色
         expValue = 10000000,
     },
@@ -1121,7 +1236,7 @@ Config.ITEMS = {
         name = "速升药水·中",
         desc = "使用后立即获得 1亿 经验值",
         icon = "item_exp_potion_100m_20260309142547.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 80, 140, 255 },  -- 蓝色
         expValue = 100000000,
     },
@@ -1130,7 +1245,7 @@ Config.ITEMS = {
         name = "速升药水·极",
         desc = "使用后立即获得 10亿 经验值",
         icon = "item_exp_potion_1b_20260309142538.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 180, 80, 220 },  -- 紫色
         expValue = 1000000000,
     },
@@ -1139,7 +1254,7 @@ Config.ITEMS = {
         name = "速升药水·250",
         desc = "使用后立即获得 30万亿 经验值，可直升250级",
         icon = "item_exp_potion_250_20260310012228.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 255, 100, 50 },  -- 橙红色
         expValue = 30000000000000,
     },
@@ -1148,7 +1263,7 @@ Config.ITEMS = {
         name = "世界Boss挑战券",
         desc = "使用后增加1次世界Boss挑战次数",
         icon = "item_wb_ticket_20260310175942.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 255, 80, 80 },  -- 红色
     },
     -- 魔法石 (统一定义，tier 掉落时动态附加)
@@ -1157,7 +1272,7 @@ Config.ITEMS = {
         name = "魔法石",
         desc = "将装备Tier提升至指定章节等级",
         icon = "magic_stone_20260311035426.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 100, 220, 100 },
         isMagicStone = true,
     },
@@ -1167,7 +1282,7 @@ Config.ITEMS = {
         name = "顶级魔法石",
         desc = "将装备Tier提升至当前最高章节等级",
         icon = "magic_stone_top_20260311035701.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 255, 215, 0 },  -- 金色
         isMagicStone = true,
         isTopMagicStone = true,
@@ -1178,7 +1293,7 @@ Config.ITEMS = {
         name = "散光棱镜",
         desc = "用于为橙色装备打孔，每次增加1个宝石孔位",
         icon = "Textures/Items/item_prism.png",
-        maxStack = 99,
+        maxStack = 999,
         color = { 200, 220, 255 },  -- 浅蓝白色
     },
 }
@@ -1402,18 +1517,26 @@ function Config.CalcMainStatValue(slotBase, itemPower)
 end
 
 --- 计算主属性数值 (含升级加成)
---- 公式: slotBase × (IP/100) + slotBase × upgradeLv × UPGRADE_MAIN_GROWTH
+--- v5.0 公式: slotBase × (IP/100) × (1 + upgradeLv × UPGRADE_MAIN_GROWTH)
 ---@param slotBase number
 ---@param itemPower number
 ---@param upgradeLv number
 ---@return number
 function Config.CalcMainStatValueFull(slotBase, itemPower, upgradeLv)
     local base = slotBase * (itemPower / 100)
-    local upgradeBonus = slotBase * (upgradeLv or 0) * Config.UPGRADE_MAIN_GROWTH
-    return base + upgradeBonus
+    local upgradeMul = 1.0 + (upgradeLv or 0) * Config.UPGRADE_MAIN_GROWTH
+    return base * upgradeMul
 end
 
---- 计算单条词缀的里程碑倍率
+--- 计算词缀升级倍率 (v5.0: 每次升级全词缀 +5%)
+--- @param upgradeLv number 升级次数 (0-4, 终局强化后5)
+--- @return number 倍率 (1.0 表示无加成)
+function Config.CalcAffixUpgradeMul(upgradeLv)
+    if not upgradeLv or upgradeLv <= 0 then return 1.0 end
+    return 1.0 + upgradeLv * Config.UPGRADE_AFFIX_GROWTH
+end
+
+--- (旧版兼容) 计算单条词缀的里程碑倍率
 --- @param milestoneCount number 该词缀被选中的里程碑次数
 --- @return number 倍率 (1.0 表示无加成)
 function Config.CalcAffixMilestoneMul(milestoneCount)
@@ -1427,6 +1550,75 @@ Config.TEST_USER_IDS = {
 
 -- 封禁用户列表（禁止登录 + 排行榜不计入）
 Config.BANNED_USER_IDS = {
+}
+
+-- ============================================================================
+-- 魔力之森配置
+-- ============================================================================
+
+Config.MANA_FOREST = {
+    UNLOCK_CHAPTER      = 4,     -- 解锁章节 (通关第4章)
+    HARD_UNLOCK_CHAPTER = 8,     -- 困难模式解锁章节
+    MAX_DAILY_ATTEMPTS  = 1,     -- 每日免费次数
+    MAX_BONUS_ATTEMPTS  = 5,     -- 广告额外次数上限
+    FIGHT_DURATION      = 90,    -- 战斗时长 (秒)
+    MONSTER_SCALE       = 0.80,  -- 普通模式怪物缩放
+    HARD_MONSTER_SCALE  = 1.30,  -- 困难模式怪物缩放
+    ELITE_HP_MUL        = 2.5,   -- 精英HP倍率（普通）
+    HARD_ELITE_HP_MUL   = 3.5,   -- 精英HP倍率（困难）
+
+    -- 怪物数量
+    MONSTER_COUNT        = 30,   -- 普通模式总怪物数
+    HARD_MONSTER_COUNT   = 40,   -- 困难模式总怪物数
+    ELITE_COUNT          = 3,    -- 普通精英数
+    HARD_ELITE_COUNT     = 5,    -- 困难精英数
+    MAX_ON_FIELD         = 8,    -- 场上同时存在上限（普通）
+    HARD_MAX_ON_FIELD    = 10,   -- 场上同时存在上限（困难）
+    SPAWN_INTERVAL       = 0.8,  -- 生成间隔
+
+    -- 精华系统
+    ESSENCE_PER_NORMAL  = 1,     -- 普通怪精华
+    ESSENCE_PER_ELITE   = 5,     -- 精英怪精华
+    CRYSTAL_ESSENCE     = 3,     -- 水晶精华
+
+    -- 增益阶梯门槛
+    BUFF_THRESHOLDS = { 5, 15, 25, 35 },
+    BUFF_TIERS = {
+        { atkSpd = 0.15 },                                     -- Tier 1
+        { atkSpd = 0.15, dmg = 0.10 },                         -- Tier 2
+        { atkSpd = 0.30, dmg = 0.20 },                         -- Tier 3
+        { atkSpd = 0.30, dmg = 0.20, crit = 0.10 },            -- Tier 4
+    },
+
+    -- 涌潮事件
+    SURGE_INTERVAL      = 30,    -- 每30秒一次涌潮
+    SURGE_CRYSTAL_COUNT = 3,     -- 每次生成3个水晶
+    SURGE_CRYSTAL_LIFE  = 8,     -- 水晶存在8秒
+
+    -- 精华→奖励转化
+    POTION_RATIO_NORMAL = 8,     -- 普通: floor(精华/8) 瓶药水
+    POTION_RATIO_HARD   = 6,     -- 困难: floor(精华/6) 瓶药水
+    DEW_RATIO_NORMAL    = 7,     -- 普通: floor(精华/7) 森之露
+    DEW_RATIO_HARD      = 5,     -- 困难: floor(精华/5) 森之露
+
+    -- 额外固定奖励
+    GOLD_BASE_NORMAL = 200,
+    GOLD_BASE_HARD   = 400,
+    EXP_BASE_NORMAL  = 2000,
+    EXP_BASE_HARD    = 4000,
+
+    -- 首通额外奖励
+    FIRST_CLEAR_POTIONS = 5,
+    FIRST_CLEAR_DEW     = 3,
+
+    -- 死亡惩罚
+    DEATH_EFFICIENCY = 0.60,     -- 死亡时精华效率60%
+}
+
+-- 魔力之源升级成本 (森之露消耗)
+-- 索引 = 目标等级 (从Lv0升到Lv1需要20, 从Lv1升到Lv2需要35, ...)
+Config.MANA_POTION_UPGRADE_COSTS = {
+    20, 35, 55, 80, 110, 145, 185, 230, 280, 340,
 }
 
 -- ConfigCalc 注入计算函数到 Config 表 (消除循环依赖)

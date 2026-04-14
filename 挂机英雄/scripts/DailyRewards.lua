@@ -24,7 +24,7 @@ end
 
 -- ============================================================================
 -- 奖励配置（后续可自由修改此处）
--- 支持字段: gold / soulCrystal / stone / bagItems / equips
+-- 支持字段: gold / soulCrystal / materials / bagItems / equips
 -- ============================================================================
 
 DailyRewards.CONFIG = {
@@ -34,9 +34,9 @@ DailyRewards.CONFIG = {
         [2] = { gold = 1500 },
         [3] = { soulCrystal = 50 },
         [4] = { gold = 2000 },
-        [5] = { stone = 30 },
+        [5] = { materials = { iron = 20, crystal = 10 } },
         [6] = { soulCrystal = 100 },
-        [7] = { soulCrystal = 200, stone = 50 },
+        [7] = { soulCrystal = 200, materials = { iron = 30, crystal = 15, wraith = 5 } },
     },
 }
 
@@ -55,7 +55,12 @@ end
 local REWARD_ICONS = {
     gold        = "icon_gold_20260307034449.png",
     soulCrystal = "icon_soul_crystal_20260307170758.png",
-    stone       = "icon_stone_20260307170829.png",
+    iron        = "icon_stone_20260307170829.png",  -- 暂用旧图标
+    crystal     = "icon_stone_20260307170829.png",
+    wraith      = "icon_stone_20260307170829.png",
+    eternal     = "icon_stone_20260307170829.png",
+    abyssHeart  = "icon_stone_20260307170829.png",
+    riftEcho    = "icon_stone_20260307170829.png",
 }
 
 -- ============================================================================
@@ -74,17 +79,18 @@ local REWARD_ICONS = {
 DailyRewards.QUESTS = {
     { name = "初露锋芒",   desc = "通关3个关卡",       trackKey = "stages",      target = 3,    points = 10, stars = 1, rewards = { gold = 250 } },
     { name = "杀戮机器",   desc = "击败80个怪物",       trackKey = "kills",       target = 80,   points = 10, stars = 1, rewards = { gold = 350 } },
-    { name = "以战养战",   desc = "强化装备3次",        trackKey = "enhance",     target = 3,    points = 15, stars = 1, rewards = { stone = 10 } },
+    { name = "以战养战",   desc = "强化装备3次",        trackKey = "enhance",     target = 3,    points = 15, stars = 1, rewards = { materials = { iron = 8, crystal = 4 } } },
     { name = "挥金如土",   desc = "花费5000金币",       trackKey = "goldSpent",   target = 5000, points = 10, stars = 1, rewards = { soulCrystal = 4 } },
     { name = "魔力涌动",   desc = "使用技能10次",       trackKey = "skills",      target = 10,   points = 15, stars = 2, rewards = { soulCrystal = 5 } },
     { name = "挑战强者",   desc = "挑战Boss 3次",       trackKey = "bossAttempts",  target = 3,    points = 20, stars = 2, rewards = { gold = 600, soulCrystal = 6 } },
-    { name = "试炼之路",   desc = "挑战试炼 3次",       trackKey = "trialAttempts", target = 3,    points = 25, stars = 3, rewards = { gold = 900, stone = 6 } },
+    { name = "试炼之路",   desc = "挑战试炼 3次",       trackKey = "trialAttempts", target = 3,    points = 25, stars = 3, rewards = { gold = 900, materials = { crystal = 6 } } },
+    { name = "森林探秘",   desc = "挑战魔力之森2次",    trackKey = "manaForestRuns", target = 2,   points = 15, stars = 2, rewards = { gold = 400 } },
 }
 
 DailyRewards.MILESTONES = {
     { threshold = 20,  rewards = { soulCrystal = 30 } },
-    { threshold = 50,  rewards = { stone = 60 } },
-    { threshold = 80,  rewards = { stone = 100 } },
+    { threshold = 50,  rewards = { materials = { iron = 40, crystal = 20 } } },
+    { threshold = 80,  rewards = { materials = { crystal = 30, wraith = 10 } } },
     { threshold = 105, rewards = { soulCrystal = 100, equip = { quality = 4 } } },
 }
 
@@ -100,8 +106,8 @@ local function grantRewards(rewards)
     if rewards.soulCrystal and rewards.soulCrystal > 0 then
         GameState.AddSoulCrystal(rewards.soulCrystal)
     end
-    if rewards.stone and rewards.stone > 0 then
-        GameState.AddStone(rewards.stone)
+    if rewards.materials then
+        GameState.AddMaterials(rewards.materials)
     end
     if rewards.bagItems then
         for _, bi in ipairs(rewards.bagItems) do
@@ -146,7 +152,7 @@ end
 
 --- 节流存档：高频 trackKey（如 kills）不会每次都写盘
 local TRACK_SAVE_INTERVAL = 5       -- 至少间隔 5 秒才写盘一次
-local lastTrackSaveTime_  = 0       -- 上次存档的 os.clock()
+local lastTrackSaveTime_  = 0       -- 上次存档的 time:GetElapsedTime()
 local trackDirty_         = false   -- 有未存档的进度变更
 
 --- 外部调用：追踪任务进度
@@ -155,7 +161,7 @@ local trackDirty_         = false   -- 有未存档的进度变更
 function DailyRewards.TrackProgress(trackKey, amount)
     local qs = ensureQuestsState()
     qs.progress[trackKey] = (qs.progress[trackKey] or 0) + (amount or 1)
-    local now = os.clock()
+    local now = time:GetElapsedTime()
     if now - lastTrackSaveTime_ >= TRACK_SAVE_INTERVAL then
         lastTrackSaveTime_ = now
         trackDirty_ = false
@@ -169,7 +175,7 @@ end
 function DailyRewards.FlushProgress()
     if trackDirty_ then
         trackDirty_ = false
-        lastTrackSaveTime_ = os.clock()
+        lastTrackSaveTime_ = time:GetElapsedTime()
         SaveSystem.Save()
     end
 end
@@ -277,8 +283,12 @@ local function describeRewards(rewards)
     if rewards.soulCrystal and rewards.soulCrystal > 0 then
         table.insert(parts, "魂晶×" .. rewards.soulCrystal)
     end
-    if rewards.stone and rewards.stone > 0 then
-        table.insert(parts, "强化石×" .. rewards.stone)
+    if rewards.materials then
+        for matId, amount in pairs(rewards.materials) do
+            local def = Config.MATERIAL_MAP[matId]
+            local name = def and def.name or matId
+            table.insert(parts, name .. "×" .. amount)
+        end
     end
     if rewards.bagItems then
         for _, bi in ipairs(rewards.bagItems) do
@@ -376,7 +386,12 @@ end
 local REWARD_COLORS = {
     gold        = { 255, 215, 0, 255 },
     soulCrystal = { 180, 100, 255, 255 },
-    stone       = { 160, 180, 200, 255 },
+    iron        = { 180, 160, 140, 255 },
+    crystal     = { 100, 140, 220, 255 },
+    wraith      = { 180, 80, 220, 255 },
+    eternal     = { 255, 165, 0, 255 },
+    abyssHeart  = { 200, 50, 80, 255 },
+    riftEcho    = { 80, 220, 200, 255 },
     default     = { 200, 210, 220, 255 },
 }
 
@@ -384,7 +399,7 @@ local REWARD_COLORS = {
 local function BuildRewardIcons(rewards, iconSize)
     iconSize = iconSize or 14
     local children = {}
-    local order = { "gold", "soulCrystal", "stone" }
+    local order = { "gold", "soulCrystal" }
     for _, key in ipairs(order) do
         local val = rewards[key]
         if val and val > 0 then
@@ -395,6 +410,20 @@ local function BuildRewardIcons(rewards, iconSize)
                         backgroundImage = REWARD_ICONS[key], backgroundFit = "contain" },
                     UI.Label { text = tostring(val), fontSize = 10,
                         fontColor = REWARD_COLORS[key] or REWARD_COLORS.default },
+                },
+            })
+        end
+    end
+    -- 材料奖励
+    if rewards.materials then
+        for matId, amount in pairs(rewards.materials) do
+            table.insert(children, UI.Panel {
+                flexDirection = "row", alignItems = "center", gap = 2,
+                children = {
+                    UI.Panel { width = iconSize, height = iconSize,
+                        backgroundImage = REWARD_ICONS[matId] or REWARD_ICONS.iron, backgroundFit = "contain" },
+                    UI.Label { text = tostring(amount), fontSize = 10,
+                        fontColor = REWARD_COLORS[matId] or REWARD_COLORS.default },
                 },
             })
         end
@@ -424,9 +453,14 @@ local function BuildDailyTab()
 
         -- 生成奖励简短描述
         local rewardLines = {}
-        local REWARD_NAMES = { gold = "金", soulCrystal = "魂晶", stone = "石" }
+        local REWARD_NAMES = { gold = "金", soulCrystal = "魂晶" }
         for key, val in pairs(ms.rewards) do
-            if key == "equip" then
+            if key == "materials" then
+                for matId, amt in pairs(val) do
+                    local def = Config.MATERIAL_MAP[matId]
+                    table.insert(rewardLines, (def and def.name or matId) .. "×" .. amt)
+                end
+            elseif key == "equip" then
                 table.insert(rewardLines, "橙装×1")
             else
                 table.insert(rewardLines, val .. (REWARD_NAMES[key] or key))

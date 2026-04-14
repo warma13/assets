@@ -47,13 +47,13 @@ function Particles.SpawnDmgText(particles, x, y, dmg, isCrit, isSkill, overrideC
     if fxLv == 2 then
         -- 减弱: 只显示暴击飘字，且限频 0.2s
         if not isCrit then return end
-        local now = os.clock()
+        local now = time:GetElapsedTime()
         if now - lastCritTextTime_ < 0.2 then return end
         lastCritTextTime_ = now
     elseif fxLv == 3 then
         -- 非常弱: 只显示暴击且限频 0.8s
         if not isCrit then return end
-        local now = os.clock()
+        local now = time:GetElapsedTime()
         if now - lastCritTextTime_ < 0.8 then return end
         lastCritTextTime_ = now
     end

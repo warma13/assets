@@ -145,6 +145,7 @@ function BattleSystem.Init(areaWidth, areaHeight)
     BattleSystem.worldBossEnded = false
     BattleSystem.resourceDungeonEnded = false
     BattleSystem.setDungeonEnded = false
+    BattleSystem.manaForestEnded = false
 
     BattleSystem._waveComplete = false
     BattleSystem._restTimer    = 0
@@ -284,6 +285,7 @@ function BattleSystem.Update(dt)
     if bs.worldBossEnded then return end
     if bs.resourceDungeonEnded then return end
     if bs.setDungeonEnded then return end
+    if bs.manaForestEnded then return end
 
     bs.time = bs.time + dt
     bs.pickupRadius = GameState.player.pickupRadius
@@ -385,6 +387,16 @@ function BattleSystem.Update(dt)
     GameState.UpdateLifeStealTimer(dt)
     GameState.TickHPRegen(dt)
     GameState.TickManaRegen(dt)
+
+    -- 自动喝魔力之源: MP 低于 30% 时自动使用
+    if GameState.manaPotion and GameState.manaPotion.autoUse then
+        local maxMana = GameState.GetMaxMana()
+        if maxMana > 0 and GameState.playerMana / maxMana < 0.30 then
+            local free = GameState.IsManaPotionFreeRegen()
+            GameState.UseManaPotionOnce(free)
+        end
+    end
+
     GameState.UpdateDebuffs(dt, bs)
 
     -- 受击闪烁衰减
